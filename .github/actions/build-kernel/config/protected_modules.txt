@@ -1,0 +1,13 @@
+coresight
+rust_binder
+msm_kgsl
+camera
+oplusboot
+rmnet_wlan
+rmnet_core
+msm_drm
+cnss2
+oplus_chg_v2
+reboot_mode
+rfkill
+bootloader_log
