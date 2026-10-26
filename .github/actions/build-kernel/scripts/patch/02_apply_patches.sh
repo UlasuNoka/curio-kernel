@@ -29,7 +29,6 @@ if [ "${OP_BBG:-false}" = "true" ]; then
   echo "CONFIG_BBG=y" >> common/arch/arm64/configs/gki_defconfig
   sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
 
-  PLATFORM="${OP_PLATFORM:-${OP_BRANCH#*/}}"
   case "$PLATFORM" in
     sm8850|sm8845)
       echo "Applying BBG efisp abl whitelist patch"
@@ -374,7 +373,28 @@ if [ "${OP_DS:-false}" = "true" ]; then
 fi
 
 # ==============================================================================
-# 8. Disable GPUEB (MTK 5.10 only)
+# 8. USB Arsenal Support
+# ==============================================================================
+if [ "${OP_USB_ARSENAL:-false}" = "true" ]; then
+  log_group "Add USB Arsenal Support"
+  cd "$COMMON_KERNEL_FOLDER"
+  UA_DIR="${KERNEL_PATCHES_FOLDER}/common/usb_arsenal/${KERNEL_VER}"
+
+  if [ -d "$UA_DIR" ]; then
+    for p in "$UA_DIR"/*.patch; do
+      [ -f "$p" ] || continue
+      echo "Applying USB Arsenal patch: $(basename "$p")"
+      patch -p1 --forward < "$p"
+    done
+    log_success "USB Arsenal patches applied for kernel ${KERNEL_VER}"
+  else
+    log_warn "No USB Arsenal patches found for kernel ${KERNEL_VER}, skipping"
+  fi
+  log_endgroup
+fi
+
+# ==============================================================================
+# 9. Disable GPUEB (MTK 5.10 only)
 # ==============================================================================
 if [[ "$KERNEL_VER" == "5.10" && ("$OP_SOC" == dimensity* || "$OP_SOC" == helio*) ]]; then
   log_group "Disable GPUEB for MTK kernel 5.10"
@@ -383,7 +403,7 @@ if [[ "$KERNEL_VER" == "5.10" && ("$OP_SOC" == dimensity* || "$OP_SOC" == helio*
 fi
 
 # ==============================================================================
-# 9. Fake config.gz Patch
+# 10. Fake config.gz Patch
 # ==============================================================================
 log_group "Apply Fake config.gz Patch"
 cd "$COMMON_KERNEL_FOLDER"
