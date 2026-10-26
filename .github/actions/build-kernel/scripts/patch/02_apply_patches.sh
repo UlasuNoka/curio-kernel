@@ -12,13 +12,24 @@ MIN_VERSION="5.16"
 if [ "${OP_BBG:-false}" = "true" ]; then
   log_group "Add BBG LSM"
   cd "$KERNEL_PLATFORM_FOLDER"
-  echo "Adding BBG..."
-  if ! wget -qO- "$BBG_SETUP_URL" | bash -s "${BBG_SETUP_REF:-main}"; then
-    log_warn "BBG setup script failed, continuing anyway"
+  echo "Adding BBG from local source..."
+
+  BBG_TARGET_DIR="common/security/baseband-guard"
+  rm -rf "$BBG_TARGET_DIR"
+  cp -r "${KERNEL_PATCHES_FOLDER}/common/bbg/source" "$BBG_TARGET_DIR"
+
+  if ! grep -q 'baseband-guard' common/security/Makefile; then
+    printf '\nobj-$(CONFIG_BBG) += baseband-guard/\n' >> common/security/Makefile
   fi
+
+  if ! grep -q 'security/baseband-guard/Kconfig' common/security/Kconfig; then
+    sed -i '/endmenu/i source "security/baseband-guard/Kconfig"' common/security/Kconfig
+  fi
+
   echo "CONFIG_BBG=y" >> common/arch/arm64/configs/gki_defconfig
   sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/selinux/selinux,baseband_guard/ } }' common/security/Kconfig
 
+  PLATFORM="${OP_PLATFORM:-${OP_BRANCH#*/}}"
   case "$PLATFORM" in
     sm8850|sm8845)
       echo "Applying BBG efisp abl whitelist patch"

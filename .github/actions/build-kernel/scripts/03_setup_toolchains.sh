@@ -129,19 +129,7 @@ if [ "${OP_RUST_BUILD:-false}" = "true" ]; then
     export_env "BINDGEN" "${BINDGEN_BIN}/bindgen"
     log_success "Detected BINDGEN: $BINDGEN_VERSION"
   else
-    log_warn "No prebuilt bindgen found, installing bindgen-cli via cargo..."
-    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain none
-    # shellcheck disable=SC1091
-    source "$HOME/.cargo/env"
-
-    cargo install bindgen-cli --version "${BINDGEN_CLI_VERSION:-0.69.5}"
-
-    BINDGEN="$(command -v bindgen)"
-    BINDGEN_BIN="$(dirname "$BINDGEN")"
-    add_path "$BINDGEN_BIN"
-    export_env "BINDGEN_BIN_PATH" "$BINDGEN_BIN"
-    export_env "BINDGEN" "$BINDGEN"
-    bindgen --version
+    log_warn "No prebuilt bindgen found in prebuilts. Rust build may fail."
   fi
 
   log_endgroup
