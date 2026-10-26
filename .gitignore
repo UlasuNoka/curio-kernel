@@ -1,0 +1,28 @@
+# Local environment & IDE
+.actrc
+.env
+.input
+.vscode
+
+# Patch & merge leftovers
+*.Identifier
+*.orig
+*.rej
+
+# Build & CI temporary directories
+.ccache/
+ccache.log
+matrix.json
+all_configs.json
+temp_manifest.xml
+summary.txt
+release_notes.md
+downloaded-artifacts/
+debug_artifacts/
+kernel_patches/
+*.tar
+*.tar.gz
+*.tzst
+*.part*
+*.img
+*.zip
