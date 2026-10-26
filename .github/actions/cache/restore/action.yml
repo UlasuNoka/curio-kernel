@@ -1,0 +1,188 @@
+name: 'Restore Cache'
+description: 'Restore compressed cache archives from GitHub Releases.'
+
+inputs:
+  cache_path:
+    description: 'Path where cache should be restored'
+    required: true
+  cache_key:
+    description: 'Primary key to restore cache'
+    required: true
+  restore_keys:
+    description: 'Multiline list of keys (fallback prefixes)'
+    required: false
+    default: ''
+  cache_bucket:
+    description: 'The tag name for the release (e.g., general-cache)'
+    required: true
+    default: 'general-cache'
+  github_token:
+    description: 'GitHub Token (optional, used for gh API asset listing)'
+    required: false
+    default: ${{ github.token }}
+  debug:
+    description: 'Enable Logs'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Detect and Download Cache
+      shell: bash
+      env:
+        TARGET_REPO: ${{ github.repository }}
+        GH_TOKEN: ${{ inputs.github_token }}
+        INPUT_CACHE_PATH: ${{ inputs.cache_path }}
+        INPUT_CACHE_KEY: ${{ inputs.cache_key }}
+        INPUT_RESTORE_KEYS: ${{ inputs.restore_keys }}
+        INPUT_CACHE_BUCKET: ${{ inputs.cache_bucket }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: |
+        set -euo pipefail
+        if [ "$INPUT_DEBUG" = "true" ]; then set -x; fi
+
+        cd "$GITHUB_WORKSPACE"
+
+        TAG_NAME="$INPUT_CACHE_BUCKET"
+        BASE_URL="https://github.com/${TARGET_REPO}/releases/download/$TAG_NAME"
+        ASSETS_URL="https://github.com/${TARGET_REPO}/releases/expanded_assets/$TAG_NAME"
+
+        ARIA2_OPTS=(
+          "-x16" "-s16" "-k1M" "-j5" "--file-allocation=none"
+          "--header=User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+          "--header=Accept: */*"
+          "--header=Connection: keep-alive"
+        )
+
+        if [ "$INPUT_DEBUG" != "true" ]; then
+          ARIA2_OPTS+=("--quiet" "--summary-interval=0" "--console-log-level=error")
+        fi
+
+        echo "::group::Fetching Asset List"
+        ALL_ASSETS=""
+        if command -v gh >/dev/null 2>&1 && [ -n "${GH_TOKEN:-}" ]; then
+          ALL_ASSETS=$(gh release view "$TAG_NAME" --repo "$TARGET_REPO" --json assets --jq '.assets[].name' 2>/dev/null | sort -u || true)
+        fi
+
+        if [ -z "$ALL_ASSETS" ]; then
+          HTTP_RESPONSE=$(curl -sL -A "Mozilla/5.0" -w "%{http_code}" "$ASSETS_URL" -o assets.html || echo "404")
+          if [ "$HTTP_RESPONSE" -eq 200 ]; then
+            ALL_ASSETS=$(grep -oP "download/$TAG_NAME/\K[^\"' ]+" assets.html | sort -u || true)
+          else
+            echo "Status $HTTP_RESPONSE: Release '$TAG_NAME' not found or empty."
+          fi
+          rm -f assets.html
+        fi
+
+        if [ -z "$ALL_ASSETS" ]; then
+          echo "No assets found in bucket '$TAG_NAME'. Skipping restore."
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        echo "Successfully fetched asset list ($(echo "$ALL_ASSETS" | wc -l) assets)."
+        echo "::endgroup::"
+
+        SEARCH_LIST=$(printf "%s\n%s" "$INPUT_CACHE_KEY" "$INPUT_RESTORE_KEYS" | sed '/^$/d')
+
+        download_asset() {
+          local filename="$1"
+          local url="$2"
+          local max_retries=3
+          local attempt=1
+
+          while [ $attempt -le $max_retries ]; do
+            echo "  Attempt $attempt: Downloading $filename..."
+            if timeout 10m aria2c "${ARIA2_OPTS[@]}" --retry-wait=10 --max-tries=10 -o "$filename" "$url"; then
+              return 0
+            fi
+            echo "  [WARN] Download failed or timed out. Retrying in 5s..."
+            sleep 5
+            attempt=$((attempt + 1))
+          done
+          return 1
+        }
+
+        extract_cache() {
+          local cmd="$1"
+          if [ "$INPUT_DEBUG" = "true" ]; then
+            sh -c "$cmd"
+          else
+            sh -c "$cmd" >/dev/null 2>&1
+          fi
+        }
+
+        FOUND=false
+        while read -r KEY; do
+          [ -z "$KEY" ] && continue
+          echo "::group::Searching Prefix: $KEY"
+
+          MATCH=$(echo "$ALL_ASSETS" | grep -F "cache-$KEY" | grep "^cache-$KEY" | sort -r | head -n 1 || true)
+
+          if [ -z "$MATCH" ]; then
+            echo "Not found."
+            echo "::endgroup::"
+            continue
+          fi
+
+          BASE_FILENAME=$(echo "$MATCH" | sed -E 's/\.(tzst|tar)(\.part[a-z]{2})?$//')
+          EXT=$(echo "$MATCH" | grep -oP '\.(tzst|tar)' | head -n 1)
+
+          [[ "$MATCH" == *".part"* ]] && IS_SPLIT=true || IS_SPLIT=false
+          [ "$EXT" = ".tzst" ] && COMPRESSED=true || COMPRESSED=false
+          FOUND=true
+
+          echo "[OK] Hit! Restoring $BASE_FILENAME$EXT"
+          echo "::endgroup::"
+
+          echo "::group::Downloading Cache"
+          if [ "$IS_SPLIT" = "true" ]; then
+            for part in {a..z}{a..z}; do
+              PART_NAME="$BASE_FILENAME$EXT.part$part"
+              if echo "$ALL_ASSETS" | grep -qxF "$PART_NAME"; then
+                if ! download_asset "$PART_NAME" "$BASE_URL/$PART_NAME"; then
+                  echo "::error::Failed to download $PART_NAME after multiple retries."
+                  exit 1
+                fi
+              else
+                break
+              fi
+            done
+          else
+            if ! download_asset "$BASE_FILENAME$EXT" "$BASE_URL/$BASE_FILENAME$EXT"; then
+              echo "::error::Failed to download $BASE_FILENAME$EXT after multiple retries."
+              exit 1
+            fi
+          fi
+          echo "::endgroup::"
+
+          echo "::group::Extracting Cache"
+          mkdir -p "$INPUT_CACHE_PATH"
+          FINAL_ARCHIVE="$BASE_FILENAME$EXT"
+          EXTRACT_DIR="$(dirname "$INPUT_CACHE_PATH")"
+
+          if [ "$IS_SPLIT" = "true" ]; then
+            PARTS=$(ls "$FINAL_ARCHIVE.part"* | sort | tr '\n' ' ')
+            if [ "$COMPRESSED" = "true" ]; then
+              extract_cache "cat $PARTS | tar -I 'zstd -d -T0' -xvf - -C '$EXTRACT_DIR'"
+            else
+              extract_cache "cat $PARTS | tar -xvf - -C '$EXTRACT_DIR'"
+            fi
+            rm -f $PARTS
+          else
+            if [ "$COMPRESSED" = "true" ]; then
+              extract_cache "tar -I 'zstd -d -T0' -xvf '$FINAL_ARCHIVE' -C '$EXTRACT_DIR'"
+            else
+              extract_cache "tar -xvf '$FINAL_ARCHIVE' -C '$EXTRACT_DIR'"
+            fi
+            rm -f "$FINAL_ARCHIVE"
+          fi
+          echo "[OK] Restore complete."
+          echo "::endgroup::"
+          break
+        done <<< "$SEARCH_LIST"
+
+        if [ "$FOUND" = "false" ]; then
+          echo "[WARN] No cache matches found. Proceeding with fresh run."
+        fi
