@@ -1,0 +1,195 @@
+name: Toolchain Mirror Sync
+
+permissions:
+  contents: write
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  discover-toolchains:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.scan.outputs.matrix }}
+      has_items: ${{ steps.scan.outputs.has_items }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout Target Manifests
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            targets/
+          sparse-checkout-cone-mode: false
+
+      - name: Scan Manifests & Filter Cached Toolchains
+        id: scan
+        shell: python3 {0}
+        run: |
+          import glob
+          import json
+          import os
+          import subprocess
+          import xml.etree.ElementTree as ET
+
+          repo = os.environ["TARGET_REPO"]
+          tag = "toolchain-cache"
+
+          res = subprocess.run(
+              ["gh", "release", "view", tag, "--repo", repo, "--json", "assets"],
+              stdout=subprocess.PIPE,
+              stderr=subprocess.PIPE,
+              text=True,
+          )
+          if res.returncode != 0:
+              print(f"[INFO] Creating release bucket '{tag}'...")
+              subprocess.run(
+                  [
+                      "gh",
+                      "release",
+                      "create",
+                      tag,
+                      "--repo",
+                      repo,
+                      "--title",
+                      "Toolchain Mirror Cache",
+                      "--notes",
+                      "Deduplicated prebuilt toolchains for Curio Kernel builds.",
+                  ],
+                  check=True,
+              )
+              existing = set()
+          else:
+              existing = {a["name"] for a in json.loads(res.stdout or "{}").get("assets", [])}
+
+          tc_map = {
+              "clang/host/linux-x86": "clang",
+              "prebuilts/rust": "rust",
+              "prebuilts/clang-tools": "clang-tools",
+              "prebuilts/build-tools": "build-tools",
+          }
+
+          pending = {}
+          for xml_path in sorted(glob.glob("targets/**/manifests/*.xml", recursive=True)):
+              root = ET.parse(xml_path).getroot()
+              remotes = {r.get("name"): r.get("fetch", "").rstrip("/") for r in root.findall("remote")}
+              default = root.find("default")
+              def_remote = default.get("remote") if default is not None else None
+              def_rev = default.get("revision") if default is not None else None
+
+              for proj in root.findall("project"):
+                  name = proj.get("name", "")
+                  label = next((lbl for key, lbl in tc_map.items() if key in name), None)
+                  if not label:
+                      continue
+                  remote_name = proj.get("remote", def_remote)
+                  rev = proj.get("revision", def_rev)
+                  base = remotes.get(remote_name, "")
+                  if not base or not rev:
+                      continue
+                  archive_name = f"{label}-{rev}.tar.gz"
+                  if archive_name in existing or any(a.startswith(archive_name + ".part") for a in existing):
+                      print(f"[OK] Already mirrored: {archive_name}")
+                      continue
+                  if "googlesource.com" in base:
+                      url = f"{base}/{name}/+archive/{rev}.tar.gz"
+                  elif "github.com" in base:
+                      url = f"{base}/{name}/archive/{rev}.tar.gz"
+                  elif "git.codelinaro.org" in base or "gitlab.com" in base:
+                      url = f"{base}/{name}/-/archive/{rev}.tar.gz"
+                  else:
+                      continue
+                  pending[archive_name] = {
+                      "label": label,
+                      "rev": rev,
+                      "url": url,
+                      "archive": archive_name,
+                  }
+
+          items = list(pending.values())
+          print(f"[INFO] Toolchains queued for mirroring: {len(items)}")
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"has_items={'true' if items else 'false'}\n")
+              f.write(f"matrix={json.dumps({'include': items}, separators=(',', ':'))}\n")
+
+  upload-toolchains:
+    name: mirror (${{ matrix.label }}, ${{ matrix.rev }})
+    needs: discover-toolchains
+    if: needs.discover-toolchains.outputs.has_items == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.discover-toolchains.outputs.matrix) }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET_REPO: ${{ github.repository }}
+      TC_URL: ${{ matrix.url }}
+      TC_ARCHIVE: ${{ matrix.archive }}
+    steps:
+      - name: Fetch and Upload Toolchain Archive
+        shell: python3 {0}
+        run: |
+          import os
+          import subprocess
+
+          repo = os.environ["TARGET_REPO"]
+          url = os.environ["TC_URL"]
+          archive = os.environ["TC_ARCHIVE"]
+          max_single = 1_900_000_000
+          chunk_size = 1_500_000_000
+
+          print(f"[INFO] Downloading {archive} from {url}...")
+          subprocess.run(
+              [
+                  "aria2c",
+                  "-x16",
+                  "-s16",
+                  "-k1M",
+                  "--file-allocation=none",
+                  "--console-log-level=error",
+                  "--summary-interval=0",
+                  "--retry-wait=5",
+                  "--max-tries=10",
+                  "-o",
+                  archive,
+                  url,
+              ],
+              check=True,
+          )
+
+          size = os.path.getsize(archive)
+          uploads = []
+          if size > max_single:
+              print(f"[INFO] Splitting {archive} ({size} B)...")
+              idx = 0
+              with open(archive, "rb") as src:
+                  while True:
+                      part = f"{archive}.part{idx:02d}"
+                      written = 0
+                      with open(part, "wb") as dst:
+                          while written < chunk_size:
+                              buf = src.read(min(4 * 1024 * 1024, chunk_size - written))
+                              if not buf:
+                                  break
+                              dst.write(buf)
+                              written += len(buf)
+                      if written == 0:
+                          os.remove(part)
+                          break
+                      uploads.append(part)
+                      idx += 1
+              os.remove(archive)
+          else:
+              uploads.append(archive)
+
+          for fpath in uploads:
+              print(f"[INFO] Uploading {fpath}...")
+              subprocess.run(
+                  ["gh", "release", "upload", "toolchain-cache", fpath, "--clobber", "--repo", repo],
+                  check=True,
+              )
+          print(f"[OK] Mirrored {archive}")
