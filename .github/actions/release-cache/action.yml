@@ -1,0 +1,44 @@
+name: 'Release Artifact Cache'
+description: 'Restore or store zstd-compressed build caches in a GitHub Release bucket.'
+
+inputs:
+  mode:
+    description: 'Operation mode: restore or save'
+    required: true
+  path:
+    description: 'Directory path to cache'
+    required: true
+  key:
+    description: 'Primary cache key'
+    required: true
+  fallback_keys:
+    description: 'Newline-separated fallback key prefixes (restore mode)'
+    required: false
+    default: ''
+  tag:
+    description: 'GitHub Release tag used as storage bucket'
+    required: false
+    default: 'ccache-cache'
+  compression_level:
+    description: 'zstd compression level (1-19)'
+    required: false
+    default: '6'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Execute Release Cache Operation
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ github.repository }}
+        CACHE_MODE: ${{ inputs.mode }}
+        CACHE_PATH: ${{ inputs.path }}
+        CACHE_KEY: ${{ inputs.key }}
+        CACHE_FALLBACKS: ${{ inputs.fallback_keys }}
+        CACHE_TAG: ${{ inputs.tag }}
+        CACHE_ZSTD_LEVEL: ${{ inputs.compression_level }}
+      run: python3 "${GITHUB_ACTION_PATH}/cache.py"
