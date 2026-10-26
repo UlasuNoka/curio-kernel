@@ -13,7 +13,7 @@ manifest = "oneplus_13.xml"
 [kernel]
 gki = "android15-6.6"
 localversion = "6.6.118-android15-8-g2e6b9c3812c5-ab15114928-4k"
-build_timestamp = ""
+build_timestamp = "Mon Mar 30 10:41:25 UTC 2026"
 opt_level = "O2"
 lto = "none"
 
