@@ -1,0 +1,149 @@
+name: 'Curio Kernel Build Pipeline'
+description: 'Modular GKI 2.0 kernel build, packaging, and KMI/vABI verification pipeline.'
+
+inputs:
+  profile:
+    description: 'Path to target TOML profile'
+    required: true
+  clean:
+    description: 'Bypass ccache acceleration'
+    required: false
+    default: 'false'
+  debug:
+    description: 'Export debug artifacts (vmlinux, System.map, build.log)'
+    required: false
+    default: 'false'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+
+outputs:
+  kernel_version:
+    value: ${{ steps.package.outputs.kernel_version }}
+  image_sha256:
+    value: ${{ steps.package.outputs.image_sha256 }}
+  zip_name:
+    value: ${{ steps.package.outputs.zip_name }}
+  boot_img_name:
+    value: ${{ steps.package.outputs.boot_img_name }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate Target Config
+      shell: bash
+      env:
+        RAW_TARGET_PROFILE: ${{ inputs.profile }}
+      run: python3 "${GITHUB_WORKSPACE}/.github/scripts/targets.py" export-env "${RAW_TARGET_PROFILE}"
+
+    - name: Sync Kernel Tree
+      uses: ./.github/actions/tree-sync
+      with:
+        dest_dir: ${{ env.CFG_MODEL }}
+        github_token: ${{ inputs.github_token }}
+        debug: ${{ inputs.debug }}
+
+    - name: Initialize Workspace & Kernel Metadata
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/01_workspace.sh"
+
+    - name: Detect Toolchains
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/02_toolchains.sh"
+
+    - name: Restore ccache
+      if: ${{ inputs.clean == false || inputs.clean == 'false' }}
+      uses: ./.github/actions/release-cache
+      with:
+        mode: restore
+        path: ${{ env.CCACHE_DIR }}
+        key: curio-v2-${{ env.ARTIFACT_TAG }}-${{ env.CFG_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-${{ env.CLANG_VERSION_SHORT }}
+        fallback_keys: |
+          curio-v2-${{ env.ARTIFACT_TAG }}-${{ env.CFG_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-
+          curio-v2-${{ env.ARTIFACT_TAG }}-${{ env.CFG_OS_VERSION }}-
+        tag: ccache-cache
+        github_token: ${{ inputs.github_token }}
+
+    - name: Prepare ccache
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/03_ccache_prep.sh"
+
+    - name: Fetch Patch Dependencies
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: "${GITHUB_ACTION_PATH}/scripts/04_fetch_deps.sh"
+
+    - name: Apply Kernel Patches
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/05_apply_patches.sh"
+
+    - name: Assemble Defconfig & Module Filter
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/06_configure.sh"
+
+    - name: Compile Kernel Image
+      id: compile
+      shell: bash
+      env:
+        INPUT_CLEAN: ${{ inputs.clean }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: "${GITHUB_ACTION_PATH}/scripts/07_compile.sh"
+
+    - name: Collect ccache Stats
+      if: ${{ success() && (inputs.clean == false || inputs.clean == 'false') }}
+      shell: bash
+      env:
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: "${GITHUB_ACTION_PATH}/scripts/08_ccache_stats.sh"
+
+    - name: Package & Verify KMI
+      id: package
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/09_package_verify.sh"
+
+    - name: Write Build Report
+      shell: bash
+      env:
+        INPUT_CLEAN: ${{ inputs.clean }}
+      run: "${GITHUB_ACTION_PATH}/scripts/10_report.sh"
+
+    - name: Upload Debug Bundle
+      if: ${{ always() && !cancelled() && inputs.debug == 'true' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.DEBUG_ZIP_NAME }}
+        path: ${{ env.DEBUG_ARTIFACTS_FOLDER }}
+        compression-level: 9
+        retention-days: 90
+
+    - name: Upload AnyKernel3 Archive
+      if: success() && steps.package.conclusion == 'success'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ZIP_NAME }}
+        path: ${{ env.ARTIFACTS_FOLDER }}/${{ env.ZIP_NAME }}
+        archive: false
+        compression-level: 0
+        retention-days: 90
+
+    - name: Upload GKI Boot Image
+      if: success() && steps.package.conclusion == 'success' && env.BOOT_IMG_NAME != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.BOOT_IMG_NAME }}
+        path: ${{ env.ARTIFACTS_FOLDER }}/${{ env.BOOT_IMG_NAME }}
+        archive: false
+        compression-level: 0
+        retention-days: 90
+
+    - name: Save ccache
+      if: always() && steps.compile.conclusion == 'success' && (inputs.clean == false || inputs.clean == 'false')
+      uses: ./.github/actions/release-cache
+      with:
+        mode: save
+        path: ${{ env.CCACHE_DIR }}
+        key: curio-v2-${{ env.ARTIFACT_TAG }}-${{ env.CFG_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-${{ env.CLANG_VERSION_SHORT }}
+        tag: ccache-cache
+        compression_level: '6'
+        github_token: ${{ inputs.github_token }}
