@@ -1,0 +1,48 @@
+name: 'Download and configure Kernel Source code'
+description: 'Resolve device XML manifest and sync kernel repositories and prebuilt toolchains in parallel.'
+
+inputs:
+  source_location:
+    description: 'Folder path to save Kernel source'
+    required: true
+  github_token:
+    description: 'GitHub Token'
+    required: true
+  debug:
+    description: 'Enable Logs'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Download and Prepare Manifest
+      shell: bash
+      working-directory: ${{ inputs.source_location }}
+      run: |
+        set -euo pipefail
+        OS_LOWER=$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')
+        LOCAL_MANIFEST="../manifests/${OS_LOWER}/${OP_MANIFEST}"
+
+        if [[ "$OP_MANIFEST" == https://* ]]; then
+          echo "Fetching remote manifest URL: $OP_MANIFEST"
+          curl --fail --show-error --location --proto '=https' "$OP_MANIFEST" -o manifest.xml
+        elif [ -f "$LOCAL_MANIFEST" ]; then
+          echo "Using local repository manifest: $LOCAL_MANIFEST"
+          cp "$LOCAL_MANIFEST" manifest.xml
+        else
+          OSS_URL="https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/${OP_BRANCH}/${OP_MANIFEST}"
+          echo "Fetching manifest from OnePlusOSS: $OSS_URL"
+          curl --fail --show-error --location --proto '=https' "$OSS_URL" -o manifest.xml
+        fi
+
+    - name: Download Manifest Archives
+      shell: bash
+      env:
+        PYTHONUNBUFFERED: "1"
+        GITHUB_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ github.repository }}
+        DEBUG: ${{ inputs.debug }}
+      working-directory: ${{ inputs.source_location }}
+      run: |
+        python3 "${GITHUB_ACTION_PATH}/sync.py"
