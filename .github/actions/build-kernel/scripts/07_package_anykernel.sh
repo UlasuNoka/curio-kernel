@@ -99,9 +99,6 @@ fi
 
 mv "$ZIP_NAME" "${ARTIFACTS_FOLDER}/"
 
-# Clean temporary files in artifacts folder except our ZIP
-find "$ARTIFACTS_FOLDER" -maxdepth 1 -type f ! -name "$ZIP_NAME" -delete
-
 ZIP_SIZE=$(stat -c%s "${ARTIFACTS_FOLDER}/${ZIP_NAME}")
 ZIP_SHA256=$(sha256sum "${ARTIFACTS_FOLDER}/${ZIP_NAME}" | awk '{print $1}')
 
@@ -127,38 +124,39 @@ if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
   BOOT_IMG_NAME="boot_${ZIP_MODEL}_${OP_OS_VERSION}_${KERNEL_FULL_VER}.img"
   BOOT_IMG_PATH="${ARTIFACTS_FOLDER}/${BOOT_IMG_NAME}"
 
-  MKBOOTIMG_BIN="$(command -v mkbootimg.py || command -v mkbootimg || true)"
-  AVBTOOL_BIN="$(command -v avbtool.py || command -v avbtool || true)"
+  MKBOOTIMG_BIN="${KERNEL_PATCHES_FOLDER}/tools/mkbootimg/mkbootimg.py"
+  AVBTOOL_BIN="${KERNEL_PATCHES_FOLDER}/tools/avbtool.py"
 
-  if [ -n "$MKBOOTIMG_BIN" ] && [ -n "$AVBTOOL_BIN" ]; then
-    python3 "$MKBOOTIMG_BIN" \
-      --header_version 4 \
-      --kernel "$IMG" \
-      --cmdline "" \
-      --pagesize 4096 \
-      --output "$BOOT_IMG_PATH"
-
-    python3 "$AVBTOOL_BIN" add_hash_footer \
-      --image "$BOOT_IMG_PATH" \
-      --partition_name boot \
-      --partition_size "$BOOT_PARTITION_SIZE"
-
-    BOOT_IMG_SIZE=$(stat -c%s "$BOOT_IMG_PATH")
-    BOOT_IMG_SHA256=$(sha256sum "$BOOT_IMG_PATH" | awk '{print $1}')
-
-    export_env "BOOT_IMG_NAME" "$BOOT_IMG_NAME"
-    export_env "BOOT_IMG_SHA256" "$BOOT_IMG_SHA256"
-
-    set_output "boot_img_name" "$BOOT_IMG_NAME"
-    set_output "boot_img_sha256" "$BOOT_IMG_SHA256"
-
-    log_success "Standalone boot.img created successfully:"
-    echo "   - Name: $BOOT_IMG_NAME"
-    echo "   - Size: $(numfmt --to=iec-i --suffix=B "$BOOT_IMG_SIZE") (Partition target: $((BOOT_PARTITION_SIZE / 1024 / 1024)) MiB)"
-    echo "   - SHA256: $BOOT_IMG_SHA256"
-  else
-    log_warn "mkbootimg or avbtool not found in PATH; skipping boot.img creation."
+  if [ ! -f "$MKBOOTIMG_BIN" ] || [ ! -f "$AVBTOOL_BIN" ]; then
+    log_error "Standalone mkbootimg.py or avbtool.py not found in ${KERNEL_PATCHES_FOLDER}/tools/"
+    exit 1
   fi
+
+  python3 "$MKBOOTIMG_BIN" \
+    --header_version 4 \
+    --kernel "$IMG" \
+    --cmdline "" \
+    --pagesize 4096 \
+    --output "$BOOT_IMG_PATH"
+
+  python3 "$AVBTOOL_BIN" add_hash_footer \
+    --image "$BOOT_IMG_PATH" \
+    --partition_name boot \
+    --partition_size "$BOOT_PARTITION_SIZE"
+
+  BOOT_IMG_SIZE=$(stat -c%s "$BOOT_IMG_PATH")
+  BOOT_IMG_SHA256=$(sha256sum "$BOOT_IMG_PATH" | awk '{print $1}')
+
+  export_env "BOOT_IMG_NAME" "$BOOT_IMG_NAME"
+  export_env "BOOT_IMG_SHA256" "$BOOT_IMG_SHA256"
+
+  set_output "boot_img_name" "$BOOT_IMG_NAME"
+  set_output "boot_img_sha256" "$BOOT_IMG_SHA256"
+
+  log_success "Standalone boot.img created successfully:"
+  echo "   - Name: $BOOT_IMG_NAME"
+  echo "   - Size: $(numfmt --to=iec-i --suffix=B "$BOOT_IMG_SIZE") (Partition target: $((BOOT_PARTITION_SIZE / 1024 / 1024)) MiB)"
+  echo "   - SHA256: $BOOT_IMG_SHA256"
 
   log_endgroup
 fi
