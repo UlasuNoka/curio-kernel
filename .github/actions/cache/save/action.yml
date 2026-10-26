@@ -1,0 +1,212 @@
+name: 'Save Cache'
+description: 'Archive, split if necessary, and upload cache to GitHub Releases.'
+
+inputs:
+  cache_path:
+    description: 'Path where cache is saved'
+    required: true
+  cache_key:
+    description: 'Unique key for the cache'
+    required: true
+  cache_bucket:
+    description: 'The tag name for the release (e.g., general-cache)'
+    required: true
+    default: 'general-cache'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+  compression_level:
+    description: 'Compression level (0-19). 0 = No compression, 1 = Fast, 19 = Best.'
+    required: false
+    default: '6'
+  working_dir:
+    description: 'Path where .git folder exists'
+    required: false
+    default: ''
+  delete_after_upload:
+    description: 'Delete Source files after uploading'
+    required: false
+    default: 'false'
+  debug:
+    description: 'Enable Logs'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Archive, Split, and Upload Cache
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ github.repository }}
+        INPUT_CACHE_PATH: ${{ inputs.cache_path }}
+        INPUT_CACHE_KEY: ${{ inputs.cache_key }}
+        INPUT_CACHE_BUCKET: ${{ inputs.cache_bucket }}
+        INPUT_COMPRESSION: ${{ inputs.compression_level }}
+        INPUT_WORKING_DIR: ${{ inputs.working_dir }}
+        INPUT_DELETE_AFTER: ${{ inputs.delete_after_upload }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: |
+        set -euo pipefail
+        if [ "$INPUT_DEBUG" = "true" ]; then set -x; fi
+
+        if [ -n "$INPUT_WORKING_DIR" ]; then
+          cd "$INPUT_WORKING_DIR"
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        TAG_NAME="$INPUT_CACHE_BUCKET"
+        BASE_FILENAME="cache-${INPUT_CACHE_KEY}"
+
+        if [ "$INPUT_COMPRESSION" -eq 0 ]; then
+          FILENAME="$BASE_FILENAME.tar"
+        else
+          FILENAME="$BASE_FILENAME.tzst"
+        fi
+
+        echo "::group::Checking Release State"
+        git fetch --tags --force || true
+
+        if ! git rev-parse "$TAG_NAME" >/dev/null 2>&1; then
+          echo "Tag '$TAG_NAME' not found. Creating backdated release..."
+          GIT_COMMITTER_DATE="2015-01-01T12:00:00" git tag -a "$TAG_NAME" -m "General Cache Storage"
+          if git push origin "$TAG_NAME" --force; then
+            gh release create "$TAG_NAME" --title "General Cache" --notes "Automated storage for build assets" --repo "$TARGET_REPO" || true
+          else
+            echo "Push failed, tag might have been created by a parallel job. Continuing..."
+          fi
+        else
+          echo "Release '$TAG_NAME' already exists. Ready for upload."
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Archiving Path"
+        echo "Target: $INPUT_CACHE_PATH"
+
+        if [ ! -d "$INPUT_CACHE_PATH" ] && [ ! -f "$INPUT_CACHE_PATH" ]; then
+          echo "[WARN] Target path not found. Skipping cache save."
+          echo "::endgroup::"
+          exit 0
+        fi
+
+        DIR_NAME=$(dirname "$INPUT_CACHE_PATH")
+        BASE_NAME=$(basename "$INPUT_CACHE_PATH")
+
+        if [ "$INPUT_DEBUG" = "true" ]; then
+          if [ "$INPUT_COMPRESSION" -eq 0 ]; then
+            tar --posix -h -cvf "$FILENAME" -C "$DIR_NAME" "$BASE_NAME"
+          else
+            tar --posix -h -I "zstd -T0 -${INPUT_COMPRESSION}" -cvf "$FILENAME" -C "$DIR_NAME" "$BASE_NAME"
+          fi
+        else
+          if [ "$INPUT_COMPRESSION" -eq 0 ]; then
+            tar --posix -h -cvf "$FILENAME" -C "$DIR_NAME" "$BASE_NAME" >/dev/null 2>&1
+          else
+            tar --posix -h -I "zstd -T0 -${INPUT_COMPRESSION}" -cvf "$FILENAME" -C "$DIR_NAME" "$BASE_NAME" >/dev/null 2>&1
+          fi
+        fi
+
+        FILE_SIZE=$(stat -c%s "$FILENAME")
+        echo "Archive created: $FILENAME ($FILE_SIZE bytes)"
+        echo "::endgroup::"
+
+        echo "::group::Fetching Asset List"
+        ALL_ASSETS=$(gh release view "$TAG_NAME" --repo "$TARGET_REPO" --json assets --jq '.assets[].name' 2>/dev/null | sort || true)
+        if [ -z "$ALL_ASSETS" ]; then
+          ASSETS_URL="https://github.com/${TARGET_REPO}/releases/expanded_assets/$TAG_NAME"
+          HTTP_RESPONSE=$(curl -sL -A "Mozilla/5.0" -w "%{http_code}" "$ASSETS_URL" -o assets.html || echo "404")
+          if [ "$HTTP_RESPONSE" -eq 200 ]; then
+            ALL_ASSETS=$(grep -oP "download/$TAG_NAME/\K[^\"' ]+" assets.html | sort || true)
+          fi
+          rm -f assets.html
+        fi
+        echo "::endgroup::"
+
+        echo "::group::Uploading Assets"
+        MAX_SIZE=2000000000 # ~1.86GB
+
+        upload_with_retry() {
+          local file=$1
+          local max_attempts=3
+          for ((i=1; i<=max_attempts; i++)); do
+            echo "  Attempt $i for $file..."
+            if [ "$INPUT_DEBUG" = "true" ]; then
+              if timeout 10m gh release upload "$TAG_NAME" "$file" --clobber --repo "$TARGET_REPO"; then
+                echo "  Successfully uploaded $file"
+                return 0
+              fi
+            else
+              if timeout 10m gh release upload "$TAG_NAME" "$file" --clobber --repo "$TARGET_REPO" >/dev/null 2>&1; then
+                echo "  Successfully uploaded $file"
+                return 0
+              fi
+            fi
+            echo "  [WARN] Attempt $i failed or timed out. Retrying..."
+            sleep 5
+          done
+          return 1
+        }
+
+        if [ "$FILE_SIZE" -gt "$MAX_SIZE" ]; then
+          echo "[WARN] File > 2GB. Splitting..."
+          split -b 1500M -a 2 "$FILENAME" "${FILENAME}.part"
+
+          NEW_PARTS=("${FILENAME}.part"*)
+          NEW_PARTS_COUNT=${#NEW_PARTS[@]}
+
+          if echo "$ALL_ASSETS" | grep -qxF "${FILENAME}"; then
+            echo "Removing old single asset to make way for split parts: ${FILENAME}"
+            gh release delete-asset "$TAG_NAME" "${FILENAME}" --repo "$TARGET_REPO" -y || true
+          fi
+
+          OLD_PARTS=$(echo "$ALL_ASSETS" | grep -F "${FILENAME}.part" || true)
+          if [ -n "$OLD_PARTS" ]; then
+            OLD_PARTS_COUNT=$(echo "$OLD_PARTS" | wc -l)
+          else
+            OLD_PARTS_COUNT=0
+          fi
+
+          if [ "$OLD_PARTS_COUNT" -gt "$NEW_PARTS_COUNT" ]; then
+            echo "Old build had $OLD_PARTS_COUNT parts, new has $NEW_PARTS_COUNT. Cleaning up excess parts..."
+            EXT_PARTS=$(echo "$OLD_PARTS" | awk -v skip="$NEW_PARTS_COUNT" 'NR>skip')
+            for asset in $EXT_PARTS; do
+              echo "Removing leftover trailing part: $asset"
+              gh release delete-asset "$TAG_NAME" "$asset" --repo "$TARGET_REPO" -y || true
+            done
+          fi
+
+          for part in "${FILENAME}".part*; do
+            echo "Uploading $part..."
+            if ! upload_with_retry "$part"; then
+              echo "::error::Failed to upload part $part after multiple attempts."
+              exit 1
+            fi
+            rm -f "$part"
+          done
+          rm -rf "$FILENAME"
+        else
+          OLD_PARTS=$(echo "$ALL_ASSETS" | grep -F "${FILENAME}.part" || true)
+          if [ -n "$OLD_PARTS" ]; then
+            echo "New build shrunk to single file. Cleaning up old split parts for ${FILENAME}..."
+            while read -r asset; do
+              [ -z "$asset" ] && continue
+              echo "Removing ghost split part: $asset"
+              gh release delete-asset "$TAG_NAME" "$asset" --repo "$TARGET_REPO" -y || true
+            done <<< "$OLD_PARTS"
+          fi
+
+          echo "Uploading $FILENAME..."
+          if ! upload_with_retry "$FILENAME"; then
+            echo "::error::Failed to upload $FILENAME after multiple attempts."
+            exit 1
+          fi
+          rm -f "$FILENAME"
+        fi
+
+        if [ "$INPUT_DELETE_AFTER" = "true" ]; then
+          rm -rf "$INPUT_CACHE_PATH"
+        fi
+        echo "::endgroup::"
