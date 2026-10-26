@@ -1,0 +1,27 @@
+name: 'Runner Provisioning'
+description: 'Provision Ubuntu runner packages, optional disk reclamation, and ccache environment.'
+
+inputs:
+  prune_disk:
+    description: 'Reclaim disk space by removing unused preinstalled SDKs'
+    required: false
+    default: 'false'
+  ccache_max_size:
+    description: 'Maximum ccache directory size'
+    required: false
+    default: '12G'
+  github_token:
+    description: 'GitHub token for authenticated fetch if needed'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Provision Runner Environment
+      shell: bash
+      env:
+        PRUNE_DISK: ${{ inputs.prune_disk }}
+        CCACHE_LIMIT: ${{ inputs.ccache_max_size }}
+        GH_TOKEN: ${{ inputs.github_token }}
+      run: "${GITHUB_ACTION_PATH}/setup.sh"
