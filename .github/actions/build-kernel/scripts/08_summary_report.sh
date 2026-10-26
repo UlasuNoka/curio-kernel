@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+# shellcheck source=lib/common.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
+
+cd "$GITHUB_WORKSPACE"
+
+{
+  echo "Model: ${OP_MODEL}"
+  echo "OS Version: ${OP_OS_VERSION}"
+  echo "Android: ${ANDROID_VER}"
+  echo "Kernel base: ${KERNEL_VER}"
+  echo "Kernel full: ${KERNEL_FULL_VER}"
+  echo "Kernel Uname: ${KERNEL_UNAME:-unknown}"
+  echo "Build User: ${BUILD_USER}"
+  echo "Build Host: ${BUILD_HOST}"
+  echo "Optimization: ${OP_OPTIMIZE_LEVEL:-O2}"
+  echo "Clean Build: ${INPUT_CLEAN:-false}"
+  echo ""
+  echo "=== Curio Kernel Features ==="
+  echo "Kernel Optimisations: ${OP_OPT}"
+  echo "BBR: ${OP_BBR}"
+  echo "BBRv3: ${OP_BBR3}"
+  echo "BBG: ${OP_BBG}"
+  echo "HMBIRD SCX: ${OP_HMBIRD}"
+  echo "TTL: ${OP_TTL}"
+  echo "IP_SET & IPv6 NAT: ${OP_IP_SET}"
+  echo "Unicode Fix: ${OP_UNICODE}"
+  echo "NTSync: ${OP_NTSYNC}"
+  echo "Droidspaces: ${OP_DS}"
+  echo ""
+  echo "Image SHA256: ${IMG_SHA256:-unknown}"
+  echo "AnyKernel3 ZIP: ${ZIP_NAME:-none} (${ZIP_SHA256:-unknown})"
+  if [ -n "${BOOT_IMG_NAME:-}" ]; then
+    echo "Boot Image: ${BOOT_IMG_NAME} (${BOOT_IMG_SHA256:-unknown})"
+  fi
+  echo "Compiler: ${CLANG_VERSION:-unknown}"
+  echo "Warnings Count: ${WARNINGS_COUNT:-0}"
+  echo "Build Time: ${BUILD_TIME:-0}s"
+  if [ "${INPUT_CLEAN:-false}" = "false" ]; then
+    echo "ccache Hit Rate: ${CCACHE_HIT_RATE:-0.0%}"
+    echo "ccache Direct Rate: ${CCACHE_DIRECT_RATE:-0.0%}"
+  else
+    echo "ccache: Disabled (clean build)"
+  fi
+} | tee summary.txt
+
+{
+  echo "### Curio Kernel Build Summary"
+  echo ""
+  echo "| Metric | Value |"
+  echo "|--------|-------|"
+  echo "| **Model** | ${OP_MODEL} |"
+  echo "| **OS Version** | ${OP_OS_VERSION} |"
+  echo "| **Kernel Version** | ${KERNEL_FULL_VER} |"
+  echo "| **Kernel Uname** | \`${KERNEL_UNAME:-unknown}\` |"
+  echo "| **Build Identity** | \`${BUILD_USER}@${BUILD_HOST}\` |"
+  echo ""
+  echo "### Enabled Features"
+  echo ""
+  echo "| Feature | Status |"
+  echo "|---------|--------|"
+  echo "| **Kernel Optimisations** | ${OP_OPT} |"
+  echo "| **BBR** | ${OP_BBR} |"
+  echo "| **BBRv3** | ${OP_BBR3} |"
+  echo "| **BBG** | ${OP_BBG} |"
+  echo "| **HMBIRD SCX** | ${OP_HMBIRD} |"
+  echo "| **TTL** | ${OP_TTL} |"
+  echo "| **IP_SET & IPv6 NAT** | ${OP_IP_SET} |"
+  echo "| **Unicode Fix** | ${OP_UNICODE} |"
+  echo "| **NTSync** | ${OP_NTSYNC} |"
+  echo "| **Droidspaces** | ${OP_DS} |"
+  echo ""
+  echo "### Build Metrics & Artifacts"
+  echo ""
+  echo "| Metric | Value |"
+  echo "|--------|-------|"
+  echo "| **Optimization** | ${OP_OPTIMIZE_LEVEL:-O2} |"
+  echo "| **Clean Build** | ${INPUT_CLEAN:-false} |"
+  echo "| **Build Time** | ${BUILD_TIME:-0}s |"
+  if [ "${INPUT_CLEAN:-false}" = "false" ]; then
+    echo "| **ccache Hit Rate** | ${CCACHE_HIT_RATE:-0.0%} |"
+    echo "| **ccache Direct Rate** | ${CCACHE_DIRECT_RATE:-0.0%} |"
+  fi
+  echo "| **Warnings** | ${WARNINGS_COUNT:-0} |"
+  echo "| **Compiler** | \`${CLANG_VERSION:-unknown}\` |"
+  echo "| **Image SHA256** | \`${IMG_SHA256:-unknown}\` |"
+  echo "| **AnyKernel3 ZIP** | \`${ZIP_NAME:-unknown}\` |"
+  echo "| **AnyKernel3 SHA256** | \`${ZIP_SHA256:-unknown}\` |"
+  if [ -n "${BOOT_IMG_NAME:-}" ]; then
+    echo "| **Boot Image** | \`${BOOT_IMG_NAME}\` |"
+    echo "| **Boot Image SHA256** | \`${BOOT_IMG_SHA256:-unknown}\` |"
+  fi
+} >> "$GITHUB_STEP_SUMMARY"
