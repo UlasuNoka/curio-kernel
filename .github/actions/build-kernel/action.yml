@@ -1,0 +1,186 @@
+name: 'Build Curio Kernel'
+description: 'Build a GKI kernel from a device config using a modular composite GitHub Action.'
+
+inputs:
+  op_config_json:
+    description: 'JSON string containing full device config'
+    required: true
+  clean:
+    description: 'Force clean build without ccache acceleration'
+    required: false
+    default: 'false'
+  debug:
+    description: 'Enable dumping debug related artifacts'
+    required: false
+    default: 'false'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+
+outputs:
+  kernel_version:
+    description: 'Full kernel version string'
+    value: ${{ steps.package_zip.outputs.kernel_version }}
+  build_timestamp:
+    description: 'Effective kernel build timestamp used in uname -a'
+    value: ${{ steps.package_zip.outputs.build_timestamp }}
+  image_sha256:
+    description: 'SHA256 hash of kernel Image'
+    value: ${{ steps.package_zip.outputs.image_sha256 }}
+  zip_name:
+    description: 'Name of the generated flashable AnyKernel3 ZIP'
+    value: ${{ steps.package_zip.outputs.zip_name }}
+  zip_sha256:
+    description: 'SHA256 hash of AnyKernel3 Zip'
+    value: ${{ steps.package_zip.outputs.zip_sha256 }}
+  boot_img_name:
+    description: 'Name of the generated GKI boot.img'
+    value: ${{ steps.package_zip.outputs.boot_img_name }}
+  boot_img_sha256:
+    description: 'SHA256 hash of GKI boot.img'
+    value: ${{ steps.package_zip.outputs.boot_img_sha256 }}
+  warnings:
+    description: 'Number of compiler warnings'
+    value: ${{ steps.package_zip.outputs.warnings_count }}
+  build_time:
+    description: 'Total build time in seconds'
+    value: ${{ steps.package_zip.outputs.build_time }}
+  ccache_hit_rate:
+    description: 'ccache hit rate percentage'
+    value: ${{ steps.ccache_stats.outputs.hit_rate }}
+  ccache_direct_rate:
+    description: 'ccache direct hit rate percentage'
+    value: ${{ steps.ccache_stats.outputs.direct_rate }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Validate & Parse Config
+      shell: bash
+      env:
+        RAW_OP_CONFIG_JSON: ${{ inputs.op_config_json }}
+      run: "${GITHUB_ACTION_PATH}/scripts/01_validate_config.sh"
+
+    - name: Sync Kernel Source
+      id: sync-kernel-source
+      uses: ./.github/actions/kernel-source-sync
+      with:
+        source_location: ${{ env.CONFIG }}
+        github_token: ${{ inputs.github_token }}
+        debug: ${{ inputs.debug }}
+
+    - name: Initialize Workspace & Kernel Info
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/02_init_workspace.sh"
+
+    - name: Setup Toolchains (Clang & Rust)
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/03_setup_toolchains.sh"
+
+    - name: Restore ccache cache
+      id: restore-ccache-cache
+      uses: ./.github/actions/cache/restore
+      if: ${{ inputs.clean == false || inputs.clean == 'false' }}
+      with:
+        cache_path: ${{ env.CCACHE_DIR }}
+        cache_key: kernel-v3-${{ env.OP_MODEL }}-${{ env.OP_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-${{ env.CLANG_VERSION_SHORT }}
+        cache_bucket: "ccache-cache"
+        github_token: ${{ inputs.github_token }}
+        debug: ${{ inputs.debug }}
+        restore_keys: |
+          kernel-v3-${{ env.OP_MODEL }}-${{ env.OP_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-
+          kernel-v3-${{ env.OP_MODEL }}-${{ env.OP_OS_VERSION }}-
+
+    - name: Check and Prepare Caches
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/04_prepare_ccache.sh"
+
+    - name: Fetch Patches & Clean ABI Exports
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/patch/01_fetch_and_clean.sh"
+
+    - name: Apply Kernel Patches
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/patch/02_apply_patches.sh"
+
+    - name: Configure Kernel Defconfig & Module Debloat
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/patch/03_configure_kernel.sh"
+
+    - name: Build Kernel
+      id: build_kernel_step
+      shell: bash
+      env:
+        INPUT_CLEAN: ${{ inputs.clean }}
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: "${GITHUB_ACTION_PATH}/scripts/05_compile_kernel.sh"
+
+    - name: ccache Post-Build Statistics
+      id: ccache_stats
+      if: ${{ success() && (inputs.clean == false || inputs.clean == 'false') }}
+      shell: bash
+      env:
+        INPUT_DEBUG: ${{ inputs.debug }}
+      run: "${GITHUB_ACTION_PATH}/scripts/06_post_ccache.sh"
+
+    - name: Validate Image & Package Artifacts
+      id: package_zip
+      shell: bash
+      run: "${GITHUB_ACTION_PATH}/scripts/07_package_anykernel.sh"
+
+    - name: Final Build Summary
+      shell: bash
+      env:
+        INPUT_CLEAN: ${{ inputs.clean }}
+      run: "${GITHUB_ACTION_PATH}/scripts/08_summary_report.sh"
+
+    - name: Upload Debug Artifacts
+      if: ${{ always() && !cancelled() && inputs.debug == 'true' }}
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.DEBUG_ZIP_NAME }}
+        path: ${{ env.DEBUG_ARTIFACTS_FOLDER }}
+        compression-level: 9
+        retention-days: 90
+
+    - name: Upload AnyKernel3 ZIP Artifact
+      if: success() && steps.package_zip.conclusion == 'success'
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.ZIP_NAME }}
+        path: ${{ env.ARTIFACTS_FOLDER }}/${{ env.ZIP_NAME }}
+        archive: false
+        compression-level: 0
+        retention-days: 90
+
+    - name: Upload GKI Boot Image Artifact
+      if: success() && steps.package_zip.conclusion == 'success' && env.BOOT_IMG_NAME != ''
+      uses: actions/upload-artifact@v7
+      with:
+        name: ${{ env.BOOT_IMG_NAME }}
+        path: ${{ env.ARTIFACTS_FOLDER }}/${{ env.BOOT_IMG_NAME }}
+        archive: false
+        compression-level: 0
+        retention-days: 90
+
+    - name: Upload ccache log
+      if: success() && inputs.debug == 'true' && steps.build_kernel_step.conclusion == 'success'
+      uses: actions/upload-artifact@v7
+      with:
+        name: "${{ env.OP_MODEL }}_${{ env.OP_OS_VERSION }}_${{ env.KERNEL_FULL_VER }}_ccache.log"
+        path: ${{ env.CCACHE_LOGFILE }}
+        archive: false
+        compression-level: 0
+        retention-days: 90
+
+    - name: Save ccache cache
+      if: always() && steps.build_kernel_step.conclusion == 'success' && (inputs.clean == false || inputs.clean == 'false')
+      uses: ./.github/actions/cache/save
+      with:
+        cache_path: ${{ env.CCACHE_DIR }}
+        cache_key: kernel-v3-${{ env.OP_MODEL }}-${{ env.OP_OS_VERSION }}-${{ env.KERNEL_FULL_VER }}-${{ env.CLANG_VERSION_SHORT }}
+        cache_bucket: "ccache-cache"
+        debug: ${{ inputs.debug }}
+        github_token: ${{ inputs.github_token }}
+        working_dir: ${{ github.workspace }}
+        compression_level: 6
