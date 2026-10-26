@@ -19,6 +19,7 @@ FPMAP="-ffile-prefix-map=${WORKSPACE}=."
 
 export KCFLAGS="${KCFLAGS:-} $MAP $MPMAP $FPMAP -no-canonical-prefixes -fdiagnostics-color=never -Qunused-arguments -Wno-unused-command-line-argument -D__ANDROID_COMMON_KERNEL__"
 export KCPPFLAGS="${KCPPFLAGS:-} $MAP $MPMAP $FPMAP"
+export HOSTCFLAGS="${HOSTCFLAGS:-} -Wno-error -Wno-incompatible-pointer-types-discards-qualifiers"
 
 export LLVM=1 LLVM_IAS=1
 export ARCH=arm64 SUBARCH=arm64
@@ -117,6 +118,7 @@ make LD="${COMMON_KERNEL_FOLDER}/ld-wrapper" HOSTLD="${COMMON_KERNEL_FOLDER}/ld-
 
 KCFLAGS="$KCFLAGS -Wno-error -pipe ${KCFLAGS_EXTRA}"
 KCPPFLAGS="$KCPPFLAGS -DCONFIG_OPTIMIZE_INLINING"
+find "${COMMON_KERNEL_FOLDER}/tools" -type f -name "Makefile*" -exec sed -i 's/-Werror//g' {} + 2>/dev/null || true
 
 echo "============================================"
 echo "Build Configuration"
