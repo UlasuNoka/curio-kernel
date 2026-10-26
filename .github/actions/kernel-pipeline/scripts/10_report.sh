@@ -15,6 +15,7 @@ active_features=()
 [ "${CFG_UNICODE:-false}" = "true" ] && active_features+=("unicode")
 [ "${CFG_NTSYNC:-false}" = "true" ] && active_features+=("ntsync")
 [ "${CFG_CONTAINERS:-false}" = "true" ] && active_features+=("containers")
+[ "${CFG_USB_GADGET:-false}" = "true" ] && active_features+=("usb-gadget")
 FEATURES_STR="${active_features[*]:-none}"
 
 {

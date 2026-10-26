@@ -346,6 +346,24 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
   log_endgroup
 fi
 
+if [ "${CFG_USB_GADGET:-false}" = "true" ]; then
+  log_group "Apply USB Gadget Patches"
+  cd "$COMMON_KERNEL_FOLDER"
+  UA_DIR="${KERNEL_PATCHES_FOLDER}/patches/features/usb_gadget/${KERNEL_VER}"
+
+  if [ -d "$UA_DIR" ]; then
+    for p in "$UA_DIR"/*.patch; do
+      [ -f "$p" ] || continue
+      echo "Applying USB gadget patch: $(basename "$p")"
+      patch -p1 --forward < "$p"
+    done
+    log_success "USB gadget patches applied for kernel ${KERNEL_VER}"
+  else
+    log_warn "No USB gadget patches found for kernel ${KERNEL_VER}, skipping"
+  fi
+  log_endgroup
+fi
+
 if [[ "$KERNEL_VER" == "5.10" && ("$CFG_SOC" == dimensity* || "$CFG_SOC" == helio*) ]]; then
   log_group "Disable GPUEB for MTK kernel 5.10"
   sed -i '/obj-y.*gpueb/d' "${COMMON_KERNEL_FOLDER}/drivers/gpu/mediatek/Makefile"
