@@ -1,0 +1,179 @@
+name: Curio Kernel CI
+
+permissions:
+  contents: write
+  actions: write
+
+on:
+  workflow_dispatch:
+    inputs:
+      os_version:
+        description: 'Target OS version group'
+        required: true
+        type: choice
+        options:
+          - A16
+          - ALL
+          - A15
+          - A14
+        default: A16
+      kernel_version:
+        description: 'Target GKI kernel branch'
+        required: true
+        type: choice
+        options:
+          - ALL
+          - android16-6.12
+          - android15-6.6
+          - android14-6.1
+          - android13-5.15
+          - android12-5.10
+        default: ALL
+      device:
+        description: 'Target device model'
+        required: true
+        type: choice
+        options:
+          - ALL
+          - OP13
+        default: ALL
+      custom_filter:
+        description: 'Custom filter (e.g. "OP13, OP12", "a16/OP13", "OP13*", "!OP13T")'
+        required: false
+        type: string
+        default: ''
+      make_release:
+        description: 'Create draft GitHub Release with built artifacts'
+        required: false
+        type: boolean
+        default: false
+      clean_build:
+        description: 'Clean build (bypass ccache)'
+        required: false
+        type: boolean
+        default: false
+      debug:
+        description: 'Dump debug artifacts (vmlinux, System.map, build.log)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.resolve.outputs.matrix }}
+    steps:
+      - name: Checkout Target Profiles
+        uses: actions/checkout@v6
+        with:
+          sparse-checkout: |
+            targets/
+            .github/scripts/
+            .github/actions/kernel-pipeline/config/protected_modules.txt
+          sparse-checkout-cone-mode: false
+
+      - name: Resolve Build Matrix
+        id: resolve
+        shell: bash
+        env:
+          INPUT_OS: ${{ inputs.os_version }}
+          INPUT_KERNEL: ${{ inputs.kernel_version }}
+          INPUT_DEVICE: ${{ inputs.device }}
+          INPUT_FILTER: ${{ inputs.custom_filter }}
+        run: python3 .github/scripts/targets.py plan
+
+  build:
+    name: build (${{ matrix.id }} [${{ matrix.variant }}], ${{ matrix.os }}, ${{ matrix.gki }})
+    needs: plan
+    if: ${{ !cancelled() && needs.plan.result == 'success' }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Provision Runner
+        uses: ./.github/actions/runner-setup
+        with:
+          prune_disk: ${{ matrix.prune_disk }}
+          ccache_max_size: '12G'
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run Kernel Pipeline
+        uses: ./.github/actions/kernel-pipeline
+        with:
+          profile: ${{ matrix.profile }}
+          clean: ${{ inputs.clean_build }}
+          debug: ${{ inputs.debug }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Post-Run Workspace Cleanup
+        if: always()
+        env:
+          TARGET_ID: ${{ matrix.id }}
+        run: |
+          sudo rm -rf "${GITHUB_WORKSPACE}/${TARGET_ID}" \
+            "${GITHUB_WORKSPACE}/kernel_patches" \
+            "${GITHUB_WORKSPACE}/bbg_src" \
+            "${GITHUB_WORKSPACE}/gki_verifier" || true
+          df -h /
+
+  publish-release:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    if: |
+      !cancelled() &&
+      inputs.make_release == true &&
+      needs.build.result == 'success' &&
+      needs.plan.result == 'success'
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TARGET_REPO: ${{ github.repository }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Create Release Tag
+        run: |
+          TAG="curio-$(date -u '+%Y%m%d-%H%M')"
+          echo "RELEASE_TAG=${TAG}" >> "$GITHUB_ENV"
+          git tag "$TAG"
+          git push origin "$TAG"
+
+      - name: Collect Build Artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: ./release-artifacts
+          merge-multiple: true
+          skip-decompress: true
+
+      - name: Create Draft Release & Upload Assets
+        run: |
+          cat << EOF > release_notes.md
+          # Curio Kernel (${RELEASE_TAG})
+
+          Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          Run ID: \`${{ github.run_id }}\`
+
+          ## Artifacts
+          - \`AK3_*.zip\` - AnyKernel3 flashable archive
+          - \`boot_*.img\` - 96MB GKI Boot Image v4 (original OEM AVB VBMETA preserved)
+          EOF
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$TARGET_REPO" \
+            --title "Curio Kernel ${RELEASE_TAG}" \
+            --notes-file release_notes.md \
+            --draft
+
+          shopt -s nullglob
+          for f in ./release-artifacts/*.zip ./release-artifacts/*.img; do
+            gh release upload "$RELEASE_TAG" "$f" --repo "$TARGET_REPO" --clobber
+          done
