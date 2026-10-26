@@ -1,0 +1,27 @@
+name: 'Kernel Tree Sync'
+description: 'Resolve target manifest XML and fetch kernel source and prebuilt toolchains in parallel.'
+
+inputs:
+  dest_dir:
+    description: 'Destination workspace directory for synced repositories'
+    required: true
+  github_token:
+    description: 'GitHub Token'
+    required: true
+  debug:
+    description: 'Verbose logging'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Sync Kernel Repositories
+      shell: bash
+      env:
+        PYTHONUNBUFFERED: '1'
+        GH_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ github.repository }}
+        SYNC_DEST: ${{ inputs.dest_dir }}
+        SYNC_DEBUG: ${{ inputs.debug }}
+      run: python3 "${GITHUB_ACTION_PATH}/fetch_tree.py"
