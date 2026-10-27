@@ -94,7 +94,7 @@ jobs:
               op_os_version = cfg.get('os_version', '').lower()
 
               xml_file = "temp_manifest.xml"
-              local_manifest = f"manifests/{op_os_version}/{op_manifest}"
+              local_manifest = next((p for p in [f"manifests/{op_os_version}/{op_model}/{op_manifest}", f"manifests/{op_os_version}/{op_manifest}"] if os.path.exists(p)), "")
 
               try:
                   if op_manifest.startswith("https://"):

@@ -73,7 +73,7 @@ fi
 
 cd "$AK3_FOLDER"
 
-sed -i 's/do.check_boot_version=.*/do.check_boot_version=1/' anykernel.sh
+sed -i 's/do\.check_boot_version=.*/do.check_boot_version=1/' anykernel.sh
 
 PLATFORM="${OP_PLATFORM:-${OP_BRANCH#*/}}"
 case "$PLATFORM" in
@@ -84,7 +84,8 @@ case "$PLATFORM" in
 esac
 
 ZIP_MODEL=$(echo "$OP_MODEL" | sed 's/-[0-9]\+\.[0-9]\+\.[0-9]\+$//')
-ZIP_NAME="AK3_${ZIP_MODEL}_${OP_OS_VERSION}_${KERNEL_FULL_VER}.zip"
+TAG="${ARTIFACT_TAG:-$ZIP_MODEL}"
+ZIP_NAME="AK3_${TAG}_${OP_OS_VERSION}_${KERNEL_FULL_VER}.zip"
 mkdir -p "$ARTIFACTS_FOLDER"
 
 echo "Creating flashable ZIP: $ZIP_NAME"
@@ -115,34 +116,71 @@ echo "   - SHA256: $ZIP_SHA256"
 log_endgroup
 
 # ==============================================================================
-# Build Standalone GKI boot.img (Header v4, raw Image, VBMETA 96MB)
+# Build Standalone GKI boot.img via magiskboot & OEM stub template
 # ==============================================================================
 if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
-  log_group "Create GKI boot.img (Header v4 + VBMETA)"
+  log_group "Create GKI boot.img (OEM Stub + magiskboot)"
 
-  BOOT_PARTITION_SIZE="${OP_BOOT_PARTITION_SIZE:-${DEFAULT_BOOT_PARTITION_SIZE:-100663296}}"
-  BOOT_IMG_NAME="boot_${ZIP_MODEL}_${OP_OS_VERSION}_${KERNEL_FULL_VER}.img"
+  OS_LOWER=$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')
+  CFG_DIR="${OP_CONFIG_DIR:-${OS_LOWER}/${OP_MODEL}}"
+  BOOT_IMG_NAME="boot_${TAG}_${OP_OS_VERSION}_${KERNEL_FULL_VER}.img"
   BOOT_IMG_PATH="${ARTIFACTS_FOLDER}/${BOOT_IMG_NAME}"
+  MAGISKBOOT_BIN="${KERNEL_PATCHES_FOLDER}/tools/magiskboot"
 
-  MKBOOTIMG_BIN="${KERNEL_PATCHES_FOLDER}/tools/mkbootimg/mkbootimg.py"
-  AVBTOOL_BIN="${KERNEL_PATCHES_FOLDER}/tools/avbtool.py"
+  if [ ! -x "$MAGISKBOOT_BIN" ]; then
+    chmod +x "$MAGISKBOOT_BIN" 2>/dev/null || true
+  fi
 
-  if [ ! -f "$MKBOOTIMG_BIN" ] || [ ! -f "$AVBTOOL_BIN" ]; then
-    log_error "Standalone mkbootimg.py or avbtool.py not found in ${KERNEL_PATCHES_FOLDER}/tools/"
+  if [ ! -f "$MAGISKBOOT_BIN" ]; then
+    log_error "magiskboot binary not found at: $MAGISKBOOT_BIN"
     exit 1
   fi
 
-  python3 "$MKBOOTIMG_BIN" \
-    --header_version 4 \
-    --kernel "$IMG" \
-    --cmdline "" \
-    --pagesize 4096 \
-    --output "$BOOT_IMG_PATH"
+  # Cascading stub resolution (supports any .tzst filename inside stubs/<config_dir>/)
+  BOOT_STUB_PATH=""
+  for candidate in \
+    "${GITHUB_WORKSPACE}/stubs/${CFG_DIR}/${OP_VARIANT:-}.stub.tzst" \
+    "${GITHUB_WORKSPACE}/stubs/${CFG_DIR}/${OP_MODEL}.stub.tzst" \
+    "${GITHUB_WORKSPACE}/stubs/${CFG_DIR}/${ZIP_MODEL}.stub.tzst" \
+    "${GITHUB_WORKSPACE}/stubs/${OS_LOWER}/${OP_MODEL}/${OP_MODEL}.stub.tzst" \
+    "${GITHUB_WORKSPACE}/stubs/${OS_LOWER}/${OP_MODEL}.stub.tzst" \
+    "${GITHUB_WORKSPACE}/stubs/${OS_LOWER}/${ZIP_MODEL}.stub.tzst"; do
+    if [ -f "$candidate" ]; then
+      BOOT_STUB_PATH="$candidate"
+      break
+    fi
+  done
 
-  python3 "$AVBTOOL_BIN" add_hash_footer \
-    --image "$BOOT_IMG_PATH" \
-    --partition_name boot \
-    --partition_size "$BOOT_PARTITION_SIZE"
+  if [ -z "$BOOT_STUB_PATH" ] && [ -d "${GITHUB_WORKSPACE}/stubs/${CFG_DIR}" ]; then
+    BOOT_STUB_PATH=$(find "${GITHUB_WORKSPACE}/stubs/${CFG_DIR}" -maxdepth 1 -type f -name "*.tzst" | head -n 1 || true)
+  fi
+
+  if [ -z "$BOOT_STUB_PATH" ] && [ -d "${GITHUB_WORKSPACE}/stubs/${OS_LOWER}/${OP_MODEL}" ]; then
+    BOOT_STUB_PATH=$(find "${GITHUB_WORKSPACE}/stubs/${OS_LOWER}/${OP_MODEL}" -maxdepth 1 -type f -name "*.tzst" | head -n 1 || true)
+  fi
+
+  if [ -z "$BOOT_STUB_PATH" ] || [ ! -f "$BOOT_STUB_PATH" ]; then
+    log_error "OEM boot stub (.tzst) not found in stubs/${CFG_DIR}/ or stubs/${OS_LOWER}/"
+    exit 1
+  fi
+
+  echo "Using OEM boot stub: ${BOOT_STUB_PATH#"${GITHUB_WORKSPACE}/"}"
+
+  REPACK_WORK_DIR="$(mktemp -d)"
+  tar -I 'zstd -d' -xf "$BOOT_STUB_PATH" -O > "${REPACK_WORK_DIR}/donor.img"
+  cp "$IMG" "${REPACK_WORK_DIR}/kernel"
+
+  (
+    cd "$REPACK_WORK_DIR"
+    "$MAGISKBOOT_BIN" repack donor.img "$BOOT_IMG_PATH"
+  )
+
+  rm -rf "$REPACK_WORK_DIR"
+
+  if [ ! -f "$BOOT_IMG_PATH" ]; then
+    log_error "Failed to repack boot.img via magiskboot"
+    exit 1
+  fi
 
   BOOT_IMG_SIZE=$(stat -c%s "$BOOT_IMG_PATH")
   BOOT_IMG_SHA256=$(sha256sum "$BOOT_IMG_PATH" | awk '{print $1}')
@@ -155,7 +193,7 @@ if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
 
   log_success "Standalone boot.img created successfully:"
   echo "   - Name: $BOOT_IMG_NAME"
-  echo "   - Size: $(numfmt --to=iec-i --suffix=B "$BOOT_IMG_SIZE") (Partition target: $((BOOT_PARTITION_SIZE / 1024 / 1024)) MiB)"
+  echo "   - Size: $(numfmt --to=iec-i --suffix=B "$BOOT_IMG_SIZE")"
   echo "   - SHA256: $BOOT_IMG_SHA256"
 
   log_endgroup

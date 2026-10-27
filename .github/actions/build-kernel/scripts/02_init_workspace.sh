@@ -25,7 +25,18 @@ export_env "AK3_FOLDER" "$AK3_DIR"
 export_env "DEBUG_ARTIFACTS_FOLDER" "$DEBUG_ARTIFACTS_DIR"
 export_env "KERNEL_PATCHES_FOLDER" "$KERNEL_PATCHES_DIR"
 
-DEBUG_ZIP_NAME="debug_${OP_MODEL}_${OP_OS_VERSION}.zip"
+ZIP_MODEL=$(echo "$OP_MODEL" | sed 's/-[0-9]\+\.[0-9]\+\.[0-9]\+$//')
+VARIANT="${OP_VARIANT:-}"
+
+if [ -n "$VARIANT" ] && [ "${VARIANT,,}" != "${OP_MODEL,,}" ] && [ "${VARIANT,,}" != "${ZIP_MODEL,,}" ] && [ "${VARIANT,,}" != "default" ]; then
+  ARTIFACT_TAG="${ZIP_MODEL}_${VARIANT}"
+else
+  ARTIFACT_TAG="${ZIP_MODEL}"
+fi
+
+export_env "ARTIFACT_TAG" "$ARTIFACT_TAG"
+
+DEBUG_ZIP_NAME="debug_${ARTIFACT_TAG}_${OP_OS_VERSION}.zip"
 export_env "DEBUG_ZIP_NAME" "$DEBUG_ZIP_NAME"
 
 # Add kernel build-tools to PATH

@@ -70,7 +70,10 @@ jobs:
           for i in "${!all_json_files[@]}"; do
             file="${all_json_files[$i]}"
             if [ -f "$file" ]; then
-              jq -r '.' "$file" >> matrix.json
+              rel="${file#configs/}"
+              cfg_dir="$(dirname "$rel")"
+              variant="$(basename "$rel" .json)"
+              jq --arg cd "$cfg_dir" --arg vr "$variant" '. + {config_dir: $cd, variant: (.variant // $vr)}' "$file" >> matrix.json
               if [ $((i+1)) -lt ${#all_json_files[@]} ]; then
                 echo "," >> matrix.json
               fi
@@ -164,7 +167,7 @@ jobs:
           if-no-files-found: warn
 
   build:
-    name: build (${{ matrix.model }}, ${{ matrix.os_version }}, ${{ matrix.android_version }}-${{ matrix.kernel_version }})
+    name: build (${{ matrix.model }} [${{ matrix.variant }}], ${{ matrix.os_version }}, ${{ matrix.android_version }}-${{ matrix.kernel_version }})
     needs: [generate-matrix, prepare_ccache]
     if: ${{ !cancelled() && needs.generate-matrix.result == 'success' }}
     runs-on: ubuntu-latest
