@@ -39,6 +39,8 @@ lto="${OP_LTO:-}"
 unicode="${OP_UNICODE:-}"
 ds="${OP_DS:-}"
 ntsync="${OP_NTSYNC:-}"
+usb_arsenal="${OP_USB_ARSENAL:-false}"
+disk_cleanup="${OP_DISK_CLEANUP:-false}"
 zram="${OP_ZRAM_COMPRESSION:-}"
 localver="${OP_KERNEL_LOCALVERSION:-}"
 optimize="${OP_OPTIMIZE_LEVEL:-O2}"
@@ -120,6 +122,8 @@ validate_bool "rust_build" "$rust_build"
 validate_bool "unicode" "$unicode"
 validate_bool "ds" "$ds"
 validate_bool "ntsync" "$ntsync"
+validate_bool "usb_arsenal" "$usb_arsenal"
+validate_bool "disk_cleanup" "$disk_cleanup"
 
 if [[ -z "$lto" ]]; then
   errors+=("Input 'lto' cannot be empty")

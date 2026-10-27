@@ -4,6 +4,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
@@ -45,10 +46,7 @@ def sync_project(task):
     MAX_ATTEMPTS = 3
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
-        shm_workspace = f"/dev/shm/sync_{abs(hash(name)) % 1000000}"
-        if os.path.exists(shm_workspace):
-            shutil.rmtree(shm_workspace, ignore_errors=True)
-        os.makedirs(shm_workspace, exist_ok=True)
+        shm_workspace = tempfile.mkdtemp(dir="/dev/shm", prefix="sync_")
 
         print(f"Syncing: {name} -> {path}")
         try:
