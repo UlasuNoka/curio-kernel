@@ -26,3 +26,4 @@ kernel_patches/
 *.part*
 *.img
 *.zip
+!stubs/**/*.tzst

@@ -22,18 +22,28 @@ runs:
       run: |
         set -euo pipefail
         OS_LOWER=$(echo "$OP_OS_VERSION" | tr '[:upper:]' '[:lower:]')
-        LOCAL_MANIFEST="../manifests/${OS_LOWER}/${OP_MANIFEST}"
+        CFG_DIR="${OP_CONFIG_DIR:-${OS_LOWER}/${OP_MODEL}}"
 
-        if [[ "$OP_MANIFEST" == https://* ]]; then
+        if [[ "${OP_MANIFEST:-}" == https://* ]]; then
           echo "Fetching remote manifest URL: $OP_MANIFEST"
           curl --fail --show-error --location --proto '=https' "$OP_MANIFEST" -o manifest.xml
-        elif [ -f "$LOCAL_MANIFEST" ]; then
-          echo "Using local repository manifest: $LOCAL_MANIFEST"
-          cp "$LOCAL_MANIFEST" manifest.xml
+        elif [ -n "${OP_MANIFEST:-}" ] && [ -f "${GITHUB_WORKSPACE}/manifests/${CFG_DIR}/${OP_MANIFEST}" ]; then
+          echo "Using device manifest: manifests/${CFG_DIR}/${OP_MANIFEST}"
+          cp "${GITHUB_WORKSPACE}/manifests/${CFG_DIR}/${OP_MANIFEST}" manifest.xml
+        elif [ -n "${OP_MANIFEST:-}" ] && [ -f "${GITHUB_WORKSPACE}/manifests/${OS_LOWER}/${OP_MANIFEST}" ]; then
+          echo "Using OS-level manifest: manifests/${OS_LOWER}/${OP_MANIFEST}"
+          cp "${GITHUB_WORKSPACE}/manifests/${OS_LOWER}/${OP_MANIFEST}" manifest.xml
         else
-          OSS_URL="https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/${OP_BRANCH}/${OP_MANIFEST}"
-          echo "Fetching manifest from OnePlusOSS: $OSS_URL"
-          curl --fail --show-error --location --proto '=https' "$OSS_URL" -o manifest.xml
+          # Auto-detect single .xml in device manifest folder if name differs
+          AUTO_XML=$(find "${GITHUB_WORKSPACE}/manifests/${CFG_DIR}" -maxdepth 1 -type f -name "*.xml" 2>/dev/null | head -n 1 || true)
+          if [ -n "$AUTO_XML" ]; then
+            echo "Auto-detected device manifest: ${AUTO_XML#"${GITHUB_WORKSPACE}/"}"
+            cp "$AUTO_XML" manifest.xml
+          else
+            OSS_URL="https://raw.githubusercontent.com/OnePlusOSS/kernel_manifest/refs/heads/${OP_BRANCH}/${OP_MANIFEST}"
+            echo "Fetching manifest from OnePlusOSS: $OSS_URL"
+            curl --fail --show-error --location --proto '=https' "$OSS_URL" -o manifest.xml
+          fi
         fi
 
     - name: Download Manifest Archives
