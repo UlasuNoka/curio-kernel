@@ -20,3 +20,4 @@ gki_verifier/
 *.part*
 *.img
 *.zip
+!targets/**/stubs/*.tzst
