@@ -53,7 +53,6 @@ if [ -n "$LOCALVER" ] && [ "$LOCALVER" != "null" ]; then
 
   printf '#!/bin/sh\necho "%s"\n' "$LOCALVER" > scripts/setlocalversion
   chmod +x scripts/setlocalversion
-  echo "$LOCALVER" > .scmversion
 
   log_success "Kernel localversion override: ${LOCALVER}"
 else

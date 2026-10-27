@@ -10,7 +10,7 @@ echo "Clear temporary cache files..."
 ccache -c
 
 echo "Perform ccache eviction (unused > 12h)..."
-find "$CCACHE_DIR" -type f -mtime +0.5 -delete
+find "$CCACHE_DIR" -type f -mmin +720 -delete
 find "$CCACHE_DIR" -type d -empty -delete
 
 if [ -n "${CCACHE_LOGFILE:-}" ] && [ -f "$CCACHE_LOGFILE" ]; then

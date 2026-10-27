@@ -264,8 +264,10 @@ jobs:
       - name: Prepare op_config_json
         id: prepare_config
         shell: bash
+        env:
+          MATRIX_JSON: ${{ toJSON(matrix) }}
         run: |
-          echo "config_json=$(jq -nc --argjson m '${{ toJSON(matrix) }}' '$m')" >> "$GITHUB_OUTPUT"
+          echo "config_json=$(jq -nc --argjson m "$MATRIX_JSON" '$m')" >> "$GITHUB_OUTPUT"
 
       - name: Build Kernel
         id: build
@@ -347,6 +349,7 @@ jobs:
           - Unicode Fix
           - Droidspaces (Linux containers)
           - NTSync
+          - USB Arsenal
 
           > This build contains the kernel only; no root framework is pre-injected.
           EOF
