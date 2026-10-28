@@ -358,6 +358,18 @@ if [ "${OP_DS:-false}" = "true" ]; then
   echo "Patch to fix kernel panic caused by oplus_bsp_midas"
   patch -p1 --forward < "${KERNEL_PATCHES_FOLDER}/common/droidspaces/0001-Return-ghost-task-if-task-is-null-and-is-requested-b.patch"
 
+  CVE_USERNS_PATCH="${KERNEL_PATCHES_FOLDER}/common/droidspaces/cve_userns/cve-2026-43499-rtmutex-${KERNEL_VER}.patch"
+  if [ -f "$CVE_USERNS_PATCH" ]; then
+    echo "Applying CVE-2026-43499 rtmutex security fix for USER_NS..."
+    patch -p1 -F 3 --forward < "$CVE_USERNS_PATCH"
+  fi
+
+  CGROUP_LIMITS_PATCH=$(find "${KERNEL_PATCHES_FOLDER}/common/droidspaces/cgroup_limits" -maxdepth 1 -type f -name "fix_cgroup_limits_kabi_${KERNEL_VER}.*.patch" 2>/dev/null | head -n 1 || true)
+  if [ -n "$CGROUP_LIMITS_PATCH" ] && [ -f "$CGROUP_LIMITS_PATCH" ]; then
+    echo "Applying KABI-preserving cgroup limits patch: $(basename "$CGROUP_LIMITS_PATCH")"
+    patch -p1 -F 3 --forward < "$CGROUP_LIMITS_PATCH"
+  fi
+
   if [ "${OP_RUST_BUILD:-false}" = "true" ]; then
     echo "Add IPC NS missing symbols for rust binder"
     if ! grep -q 'EXPORT_SYMBOL.*put_ipc_ns' "${COMMON_KERNEL_FOLDER}/ipc/namespace.c"; then
