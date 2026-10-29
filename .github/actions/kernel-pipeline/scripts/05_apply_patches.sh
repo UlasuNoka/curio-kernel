@@ -331,6 +331,10 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
 
   log_info "Applying oplus_bsp_midas null-task guard..."
   patch -p1 --forward < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/midas_null_task_guard.patch"
+  if [ -f "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/sched_assist_ddl_oob.patch" ]; then
+    echo "Applying oplus_bsp_sched_assist update_ddl_hit_history OOB fix..."
+    patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/sched_assist_ddl_oob.patch"
+  fi
 
   CVE_USERNS_PATCH="${KERNEL_PATCHES_FOLDER}/patches/features/containers/userns_rtmutex/cve-2026-43499-rtmutex-${KERNEL_VER}.patch"
   if [ -f "$CVE_USERNS_PATCH" ]; then
