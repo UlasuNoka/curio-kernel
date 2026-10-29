@@ -11,6 +11,7 @@ KERNEL_VERSION="${KERNEL_VER}"
 # 1. Always-enabled fragments
 echo "Adding Tmpfs, Net Schedulers (qdisc), and Base Build configs..."
 append_defconfig_fragment "tmpfs.conf" "$DEFCONFIG_FILE"
+append_defconfig_fragment "storage_fs.conf" "$DEFCONFIG_FILE"
 append_defconfig_fragment "net_qdisc.conf" "$DEFCONFIG_FILE"
 append_defconfig_fragment "base_build.conf" "$DEFCONFIG_FILE"
 
