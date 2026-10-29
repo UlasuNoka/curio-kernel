@@ -336,6 +336,11 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
     patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/sched_assist_ddl_oob.patch"
   fi
 
+  if [ -f "${COMMON_KERNEL_FOLDER}/fs/overlayfs/params.c" ] && [ -f "${KERNEL_PATCHES_FOLDER}/patches/features/containers/ovl_override_creds_default.patch" ]; then
+    echo "Applying overlayfs override_creds default initialization fix..."
+    patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/features/containers/ovl_override_creds_default.patch"
+  fi
+
   CVE_USERNS_PATCH="${KERNEL_PATCHES_FOLDER}/patches/features/containers/userns_rtmutex/cve-2026-43499-rtmutex-${KERNEL_VER}.patch"
   if [ -f "$CVE_USERNS_PATCH" ]; then
     echo "Applying CVE-2026-43499 rtmutex security fix for USER_NS..."
