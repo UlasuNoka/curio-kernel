@@ -357,6 +357,10 @@ if [ "${OP_DS:-false}" = "true" ]; then
 
   echo "Patch to fix kernel panic caused by oplus_bsp_midas"
   patch -p1 --forward < "${KERNEL_PATCHES_FOLDER}/common/droidspaces/0001-Return-ghost-task-if-task-is-null-and-is-requested-b.patch"
+  if [ -f "${KERNEL_PATCHES_FOLDER}/common/droidspaces/fix_oplus_sched_assist_ddl_oob.patch" ]; then
+    echo "Applying oplus_bsp_sched_assist update_ddl_hit_history OOB fix..."
+    patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/common/droidspaces/fix_oplus_sched_assist_ddl_oob.patch"
+  fi
 
   CVE_USERNS_PATCH="${KERNEL_PATCHES_FOLDER}/common/droidspaces/cve_userns/cve-2026-43499-rtmutex-${KERNEL_VER}.patch"
   if [ -f "$CVE_USERNS_PATCH" ]; then
