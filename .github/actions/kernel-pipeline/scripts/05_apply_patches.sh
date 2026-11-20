@@ -358,6 +358,11 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
     patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/features/containers/ipvlan_l3mdev_kabi.patch"
   fi
 
+  if [ -f "${KERNEL_PATCHES_FOLDER}/patches/features/containers/xt_cgroup_kabi.patch" ]; then
+    echo "Applying KABI-preserving XT_MATCH_CGROUP patch..."
+    patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/features/containers/xt_cgroup_kabi.patch"
+  fi
+
   if [ "${CFG_RUST_BUILD:-false}" = "true" ]; then
     echo "Add IPC NS missing symbols for rust binder"
     if ! grep -q 'EXPORT_SYMBOL.*put_ipc_ns' "${COMMON_KERNEL_FOLDER}/ipc/namespace.c"; then
