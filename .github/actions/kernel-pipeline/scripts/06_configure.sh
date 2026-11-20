@@ -44,6 +44,10 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
   append_defconfig_fragment "containers.conf" "$DEFCONFIG_FILE"
 fi
 
+if [ "${CFG_USB_GADGET:-false}" = "true" ]; then
+  append_defconfig_fragment "usb_gadget.conf" "$DEFCONFIG_FILE"
+fi
+
 if [ "${CFG_RUST_BUILD:-false}" = "true" ]; then
   append_defconfig_fragment "rust.conf" "$DEFCONFIG_FILE"
 fi
