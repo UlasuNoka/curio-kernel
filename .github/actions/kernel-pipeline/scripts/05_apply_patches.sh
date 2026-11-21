@@ -233,6 +233,8 @@ if [ "${CFG_OPT:-false}" = "true" ]; then
     patch -p1 --forward < "${OPT_DIR}/force_tcp_nodelay.patch"
   fi
 
+  apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/features/zstd" "$COMMON_KERNEL_FOLDER" "warn"
+
   log_success "Optimisation patches applied"
   log_endgroup
 fi
