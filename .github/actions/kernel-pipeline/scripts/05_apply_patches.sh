@@ -104,14 +104,6 @@ else
   echo "Hmbird not enabled, skipping fengchi patch"
 fi
 
-echo "Patching module intercept and overlay mechanism"
-patch -p1 < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/module_overlay/overlay-${ANDROID_VER}-${KERNEL_VER}.patch"
-if [ -d "${COMMON_KERNEL_FOLDER}/kernel/module/module_overlay/" ]; then
-  chmod +x ./kernel/module/module_overlay/convert_overlay.sh
-elif [ -d "${COMMON_KERNEL_FOLDER}/kernel/module_overlay/" ]; then
-  chmod +x ./kernel/module_overlay/convert_overlay.sh
-fi
-
 copied_modules=""
 SOC="$PLATFORM"
 
@@ -167,7 +159,15 @@ if [ -d "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/module_overlay/modules/" 
 fi
 
 if (( selected_count == 0 )); then
-  echo "No matching kernel modules found."
+  echo "No matching kernel modules found, skipping module_overlay patch."
+else
+  echo "Patching module intercept and overlay mechanism"
+  patch -p1 < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/module_overlay/overlay-${ANDROID_VER}-${KERNEL_VER}.patch"
+  if [ -d "${COMMON_KERNEL_FOLDER}/kernel/module/module_overlay/" ]; then
+    chmod +x ./kernel/module/module_overlay/convert_overlay.sh
+  elif [ -d "${COMMON_KERNEL_FOLDER}/kernel/module_overlay/" ]; then
+    chmod +x ./kernel/module_overlay/convert_overlay.sh
+  fi
 fi
 
 for module_name in "${!selected_file[@]}"; do
@@ -370,17 +370,8 @@ if [ "${CFG_CONTAINERS:-false}" = "true" ]; then
     patch -p1 -F 3 --forward < "${KERNEL_PATCHES_FOLDER}/patches/features/containers/ovl_override_creds_default.patch"
   fi
 
-  CVE_USERNS_PATCH="${KERNEL_PATCHES_FOLDER}/patches/features/containers/userns_rtmutex/cve-2026-43499-rtmutex-${KERNEL_VER}.patch"
-  if [ -f "$CVE_USERNS_PATCH" ]; then
-    echo "Applying CVE-2026-43499 rtmutex security fix for USER_NS..."
-    patch -p1 -F 3 --forward < "$CVE_USERNS_PATCH"
-  fi
-
-  CGROUP_LIMITS_PATCH=$(find "${KERNEL_PATCHES_FOLDER}/patches/features/containers/cgroup_limits" -maxdepth 1 -type f -name "fix_cgroup_limits_kabi_${KERNEL_VER}.*.patch" 2>/dev/null | head -n 1 || true)
-  if [ -n "$CGROUP_LIMITS_PATCH" ] && [ -f "$CGROUP_LIMITS_PATCH" ]; then
-    echo "Applying KABI-preserving cgroup limits patch: $(basename "$CGROUP_LIMITS_PATCH")"
-    patch -p1 -F 3 --forward < "$CGROUP_LIMITS_PATCH"
-  fi
+  apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/features/containers/userns_rtmutex" "$COMMON_KERNEL_FOLDER" "required"
+  apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/features/containers/cgroup_limits" "$COMMON_KERNEL_FOLDER" "warn"
 
   if [ -f "${KERNEL_PATCHES_FOLDER}/patches/features/containers/ipvlan_l3mdev_kabi.patch" ]; then
     echo "Applying KABI-preserving L3 master device patch for IPVLAN and VRF..."
@@ -409,18 +400,8 @@ fi
 if [ "${CFG_USB_GADGET:-false}" = "true" ]; then
   log_group "Apply USB Gadget Patches"
   cd "$COMMON_KERNEL_FOLDER"
-  UA_DIR="${KERNEL_PATCHES_FOLDER}/patches/features/usb_gadget/${KERNEL_VER}"
-
-  if [ -d "$UA_DIR" ]; then
-    for p in "$UA_DIR"/*.patch; do
-      [ -f "$p" ] || continue
-      echo "Applying USB gadget patch: $(basename "$p")"
-      patch -p1 --forward < "$p"
-    done
-    log_success "USB gadget patches applied for kernel ${KERNEL_VER}"
-  else
-    log_warn "No USB gadget patches found for kernel ${KERNEL_VER}, skipping"
-  fi
+  apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/features/usb_gadget" "$COMMON_KERNEL_FOLDER" "required"
+  log_success "USB gadget patches applied for kernel ${KERNEL_VER}"
   log_endgroup
 fi
 

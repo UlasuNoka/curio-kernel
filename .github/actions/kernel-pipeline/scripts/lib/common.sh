@@ -88,12 +88,26 @@ append_defconfig_fragment() {
 apply_patch_cascade() {
   local base_dir="${1%/}"
   local target_work_dir="${2:-${COMMON_KERNEL_FOLDER}}"
+  local mode="${3:-optional}"
+  local rel_base="${base_dir#"${KERNEL_PATCHES_FOLDER}/"}"
   local os_lower
   os_lower="$(echo "${CFG_OS_VERSION:-}" | tr '[:upper:]' '[:lower:]')"
 
   if [ -z "$base_dir" ] || [ ! -d "$base_dir" ]; then
-    log_info "Patch cascade directory not found: $base_dir (skipping)"
-    return 0
+    case "$mode" in
+      required)
+        log_error "Required patch cascade directory not found: ${rel_base}"
+        return 1
+        ;;
+      warn)
+        log_warn "Patch cascade directory not found: ${rel_base} (skipping)"
+        return 0
+        ;;
+      *)
+        log_info "Patch cascade directory not found: ${rel_base} (skipping)"
+        return 0
+        ;;
+    esac
   fi
 
   local -a levels=("${base_dir}/common")
@@ -122,8 +136,20 @@ apply_patch_cascade() {
   done
 
   if [ "${#resolved_path[@]}" -eq 0 ]; then
-    log_info "No matching patches in cascade: ${base_dir#"${KERNEL_PATCHES_FOLDER}/"} (kernel=${TKERNEL_VER:-unknown})"
-    return 0
+    case "$mode" in
+      required)
+        log_error "No matching patches in required cascade: ${rel_base} (kernel=${TKERNEL_VER:-unknown})"
+        return 1
+        ;;
+      warn)
+        log_warn "No matching patches in cascade: ${rel_base} (kernel=${TKERNEL_VER:-unknown}), skipping"
+        return 0
+        ;;
+      *)
+        log_info "No matching patches in cascade: ${rel_base} (kernel=${TKERNEL_VER:-unknown})"
+        return 0
+        ;;
+    esac
   fi
 
   local -a sorted_names=()
