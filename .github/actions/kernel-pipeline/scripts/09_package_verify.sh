@@ -183,3 +183,58 @@ if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
 
   log_endgroup
 fi
+
+if [ -d "${GKI_VERIFIER_FOLDER:-}/gki_verifier" ]; then
+  log_group "Verify KMI / vABI Compatibility"
+
+  BASELINE_DIR="${TARGET_BASE}/baselines"
+  KMI_BASELINE_PATH=""
+  if [ "${CFG_KMI_BASELINE:-}" = "none" ]; then
+    log_warn "KMI audit skipped (kmi_baseline=none)"
+  elif [ -n "${CFG_KMI_BASELINE:-}" ] && [ -f "${BASELINE_DIR}/${CFG_KMI_BASELINE}" ]; then
+    KMI_BASELINE_PATH="${BASELINE_DIR}/${CFG_KMI_BASELINE}"
+  else
+    log_error "Configured kmi_baseline not found: ${BASELINE_DIR#"${GITHUB_WORKSPACE}/"}/${CFG_KMI_BASELINE:-<unset>}"
+    exit 1
+  fi
+  if [ -n "$KMI_BASELINE_PATH" ] && [ -f "$KMI_BASELINE_PATH" ]; then
+    AUDIT_TARGET="${BOOT_IMG_PATH:-$IMG}"
+    KMI_JSON="${ARTIFACTS_FOLDER}/kmi_audit.json"
+    KMI_MD="${ARTIFACTS_FOLDER}/kmi_audit.md"
+    echo "Running KMI / vABI audit against baseline: ${KMI_BASELINE_PATH#"${GITHUB_WORKSPACE}/"}"
+
+    set +e
+    PYTHONPATH="${GKI_VERIFIER_FOLDER}" python3 -m gki_verifier diff \
+      "$KMI_BASELINE_PATH" "$AUDIT_TARGET" \
+      --json "$KMI_JSON" --markdown "$KMI_MD"
+    KMI_RC=$?
+    set -e
+
+    if [ -f "$KMI_JSON" ]; then
+      KMI_VERDICT=$(jq -r '.verdict' "$KMI_JSON")
+      KMI_MISMATCHES=$(jq -r '.summary.crc_mismatches' "$KMI_JSON")
+      KMI_MISSING=$(jq -r '.summary.missing_symbols' "$KMI_JSON")
+      KMI_ADDED=$(jq -r '.summary.added_symbols' "$KMI_JSON")
+
+      export_env "KMI_VERDICT" "$KMI_VERDICT"
+      export_env "KMI_CRC_MISMATCHES" "$KMI_MISMATCHES"
+      export_env "KMI_MISSING_SYMBOLS" "$KMI_MISSING"
+      export_env "KMI_ADDED_SYMBOLS" "$KMI_ADDED"
+      export_env "KMI_AUDIT_MD" "$KMI_MD"
+
+    fi
+
+    if [ "$KMI_RC" -ne 0 ]; then
+      if [ -f "$KMI_MD" ] && [ -n "${GITHUB_STEP_SUMMARY:-}" ]; then
+        cat "$KMI_MD" >> "$GITHUB_STEP_SUMMARY"
+      fi
+      log_error "KMI / vABI mismatch detected against ${KMI_BASELINE_PATH#"${GITHUB_WORKSPACE}/"} (exit code $KMI_RC)"
+      log_endgroup
+      exit "$KMI_RC"
+    fi
+
+    log_success "KMI / vABI audit passed (0 mismatches, 0 missing)"
+  fi
+
+  log_endgroup
+fi

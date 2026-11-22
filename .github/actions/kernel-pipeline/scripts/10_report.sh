@@ -35,6 +35,9 @@ FEATURES_STR="${active_features[*]:-none}"
   if [ -n "${BOOT_IMG_NAME:-}" ]; then
     echo "Boot Image   : ${BOOT_IMG_NAME} (${BOOT_IMG_SHA256:-unknown})"
   fi
+  if [ -n "${KMI_VERDICT:-}" ]; then
+    echo "KMI Audit    : ${KMI_VERDICT} (mismatches=${KMI_CRC_MISMATCHES:-0} missing=${KMI_MISSING_SYMBOLS:-0} added=${KMI_ADDED_SYMBOLS:-0})"
+  fi
 } | tee summary.txt
 
 {
@@ -57,3 +60,10 @@ FEATURES_STR="${active_features[*]:-none}"
     echo "| GKI Boot Image | \`${BOOT_IMG_NAME}\` (\`${BOOT_IMG_SHA256:-unknown}\`) |"
   fi
 } >> "$GITHUB_STEP_SUMMARY"
+
+if [ -n "${KMI_AUDIT_MD:-}" ] && [ -f "${KMI_AUDIT_MD}" ]; then
+  {
+    echo ""
+    cat "${KMI_AUDIT_MD}"
+  } >> "$GITHUB_STEP_SUMMARY"
+fi

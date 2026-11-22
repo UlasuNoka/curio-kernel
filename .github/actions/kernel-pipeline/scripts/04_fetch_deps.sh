@@ -22,6 +22,11 @@ if [ "${CFG_BBG:-false}" = "true" ] && [ -n "${BBG_REPO_URL:-}" ] && [ -n "${BBG
   retry_clone "$BBG_REPO_URL" "$BBG_REPO_REF" "$BBG_FOLDER" "1"
 fi
 
+if [ -n "${GKI_VERIFIER_REPO_URL:-}" ] && [ -n "${GKI_VERIFIER_REPO_REF:-}" ]; then
+  log_info "Cloning gki-verifier into ${GKI_VERIFIER_FOLDER}..."
+  retry_clone "$GKI_VERIFIER_REPO_URL" "$GKI_VERIFIER_REPO_REF" "$GKI_VERIFIER_FOLDER" "1"
+fi
+
 log_success "Dependencies fetched successfully"
 log_endgroup
 
