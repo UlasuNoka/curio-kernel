@@ -196,6 +196,9 @@ done
 
 ccache --set-config=extra_files_to_hash="$copied_modules"
 
+echo "Applying security patches..."
+apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/base/security/posix_timers" "$COMMON_KERNEL_FOLDER"
+
 log_success "Core & vendor patches applied"
 log_endgroup
 
