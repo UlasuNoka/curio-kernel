@@ -32,6 +32,9 @@ usb_gadget = true
 baseband_guard = true
 ntsync = true
 unicode_fix = true
+wakelock_blocker = true
+rekernel = true
+usb_sdp_900ma = true
 tcp_congestion = ["bbr", "bbr3"]
 netfilter = ["ttl", "ipset"]
 

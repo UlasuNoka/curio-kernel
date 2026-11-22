@@ -239,6 +239,30 @@ if [ "${CFG_OPT:-false}" = "true" ]; then
   log_endgroup
 fi
 
+if [ "${CFG_WAKELOCK_BLOCKER:-false}" = "true" ] && [ -f "${KERNEL_PATCHES_FOLDER}/patches/features/boeffla_wl/boeffla_wakelock_blocker.patch" ]; then
+  log_group "Apply Boeffla Wakelock Blocker"
+  cd "$COMMON_KERNEL_FOLDER"
+  patch -p1 --forward < "${KERNEL_PATCHES_FOLDER}/patches/features/boeffla_wl/boeffla_wakelock_blocker.patch"
+  log_success "Boeffla Wakelock Blocker applied"
+  log_endgroup
+fi
+
+if [ "${CFG_USB_SDP_900MA:-false}" = "true" ] && [ "${CFG_VENDOR:-oplus}" = "oplus" ] && [ -f "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/usb_sdp_limit.patch" ]; then
+  log_group "Apply USB SDP 900mA Current Limit Driver"
+  cd "$COMMON_KERNEL_FOLDER"
+  patch -p1 --forward < "${KERNEL_PATCHES_FOLDER}/patches/vendor/oplus/usb_sdp_limit.patch"
+  log_success "USB SDP 900mA driver applied"
+  log_endgroup
+fi
+
+if [ "${CFG_REKERNEL:-false}" = "true" ]; then
+  log_group "Apply Re-Kernel Frozen Task Notifier"
+  cd "$COMMON_KERNEL_FOLDER"
+  apply_patch_cascade "${KERNEL_PATCHES_FOLDER}/patches/features/rekernel" "$COMMON_KERNEL_FOLDER" "warn"
+  log_success "Re-Kernel applied"
+  log_endgroup
+fi
+
 if [ "${CFG_NTSYNC:-false}" = "true" ]; then
   log_group "Apply NTSync Patch"
   cd "$COMMON_KERNEL_FOLDER"

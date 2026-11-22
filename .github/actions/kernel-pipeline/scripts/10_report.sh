@@ -8,6 +8,9 @@ cd "$GITHUB_WORKSPACE"
 active_features=()
 [ "${CFG_HMBIRD:-false}" = "true" ] && active_features+=("hmbird")
 [ "${CFG_OPT:-false}" = "true" ] && active_features+=("opt")
+[ "${CFG_WAKELOCK_BLOCKER:-false}" = "true" ] && active_features+=("wakelock-blocker")
+[ "${CFG_REKERNEL:-false}" = "true" ] && active_features+=("rekernel")
+[ "${CFG_USB_SDP_900MA:-false}" = "true" ] && active_features+=("usb-sdp-900ma")
 [ "${CFG_BBG:-false}" = "true" ] && active_features+=("bbg")
 [ "${CFG_BBR3:-false}" = "true" ] && active_features+=("bbr3") || { [ "${CFG_BBR:-false}" = "true" ] && active_features+=("bbr"); }
 [ "${CFG_TTL:-false}" = "true" ] && active_features+=("ttl")
