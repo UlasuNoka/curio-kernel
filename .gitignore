@@ -21,3 +21,5 @@ gki_verifier/
 *.img
 *.zip
 !targets/**/stubs/*.tzst
+*.kmi.json.gz
+!targets/**/baselines/*.kmi.json.gz

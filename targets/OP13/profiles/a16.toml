@@ -22,7 +22,7 @@ clang = "kernel_platform/prebuilts/clang/host/linux-x86/clang-r510928/bin"
 
 [artifacts]
 boot_stub = "OP13_a16.stub.tzst"
-kmi_baseline = "none"
+kmi_baseline = "OP13_a16.kmi.json.gz"
 
 [features]
 vendor_sched = "hmbird"
