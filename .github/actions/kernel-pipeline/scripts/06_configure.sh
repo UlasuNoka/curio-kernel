@@ -6,7 +6,6 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib/common.sh"
 log_group "Configure Kernel Defconfig & Module Debloat"
 
 DEFCONFIG_FILE="${COMMON_KERNEL_FOLDER}/arch/arm64/configs/gki_defconfig"
-PLATFORM="${CFG_PLATFORM}"
 KERNEL_VERSION="${KERNEL_VER}"
 
 echo "Adding Tmpfs, Net Schedulers (qdisc), and Base Build configs..."
@@ -32,11 +31,6 @@ if [ "${CFG_TTL:-false}" = "true" ]; then
 fi
 
 if [ "${CFG_IP_SET:-false}" = "true" ]; then
-  if [[ "$KERNEL_VERSION" == "6.12" ]] || [[ "$PLATFORM" == mt* ]]; then
-    echo "::debug::Skipping CONFIG_BPF_STREAM_PARSER for $KERNEL_VERSION / $PLATFORM"
-  else
-    echo "CONFIG_BPF_STREAM_PARSER=y" >> "$DEFCONFIG_FILE"
-  fi
   append_defconfig_fragment "ip_set.conf" "$DEFCONFIG_FILE"
 fi
 
