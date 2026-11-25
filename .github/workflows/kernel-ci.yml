@@ -155,17 +155,62 @@ jobs:
           skip-decompress: true
 
       - name: Create Draft Release & Upload Assets
+        env:
+          RUN_ID: ${{ github.run_id }}
         run: |
-          cat << EOF > release_notes.md
-          # Curio Kernel (${RELEASE_TAG})
+          python3 - << 'PYREL'
+          import datetime
+          import glob
+          import hashlib
+          import os
+          import re
 
-          Build Date: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
-          Run ID: \`${{ github.run_id }}\`
+          tag = os.environ["RELEASE_TAG"]
+          run_id = os.environ["RUN_ID"]
+          now_utc = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
 
-          ## Artifacts
-          - \`AK3_*.zip\` - AnyKernel3 flashable archive
-          - \`boot_*.img\` - 96MB GKI Boot Image v4 (original OEM AVB VBMETA preserved)
-          EOF
+          files = sorted(
+              glob.glob("./release-artifacts/*.zip") + glob.glob("./release-artifacts/*.img")
+          )
+          rows = []
+          for fp in files:
+              name = os.path.basename(fp)
+              size_mib = os.path.getsize(fp) / (1024 * 1024)
+              h = hashlib.sha256()
+              with open(fp, "rb") as f:
+                  for chunk in iter(lambda: f.read(1024 * 1024), b""):
+                      h.update(chunk)
+              digest = h.hexdigest()
+
+              if name.startswith("AK3_"):
+                  kind = "AnyKernel3"
+                  stem = name[4:-4]
+              elif name.startswith("boot_"):
+                  kind = "Boot Image"
+                  stem = name[5:-4]
+              else:
+                  kind = "Artifact"
+                  stem = name
+
+              m = re.match(r"^(.+?)_(A[0-9]+)_(android[0-9]+-[0-9]+\.[0-9]+\.[0-9]+)$", stem)
+              if m:
+                  target_desc = f"`{m.group(1)}` (`{m.group(2)}`, `{m.group(3)}`)"
+              else:
+                  target_desc = f"`{stem}`"
+
+              rows.append(f"| {target_desc} | `{name}` | {kind} | {size_mib:.1f} MiB | `{digest}` |")
+
+          with open("release_notes.md", "w", encoding="utf-8") as out:
+              out.write(f"# Curio Kernel (`{tag}`)\n\n")
+              out.write(f"- Build Date: `{now_utc}`\n")
+              out.write(f"- Workflow Run: `{run_id}`\n\n")
+              out.write("## Artifacts\n\n")
+              out.write("| Target | File | Type | Size | SHA256 |\n")
+              out.write("|---|---|---|---|---|\n")
+              for r in rows:
+                  out.write(r + "\n")
+              out.write("\nKernel only (no pre-injected root framework). Original OEM AVB VBMETA is preserved in `boot_*.img`.\n")
+          PYREL
 
           gh release create "$RELEASE_TAG" \
             --repo "$TARGET_REPO" \

@@ -12,7 +12,8 @@ active_features=()
 [ "${CFG_REKERNEL:-false}" = "true" ] && active_features+=("rekernel")
 [ "${CFG_USB_SDP_900MA:-false}" = "true" ] && active_features+=("usb-sdp-900ma")
 [ "${CFG_BBG:-false}" = "true" ] && active_features+=("bbg")
-[ "${CFG_BBR3:-false}" = "true" ] && active_features+=("bbr3") || { [ "${CFG_BBR:-false}" = "true" ] && active_features+=("bbr"); }
+[ "${CFG_BBR:-false}" = "true" ] && active_features+=("bbr")
+[ "${CFG_BBR3:-false}" = "true" ] && active_features+=("bbr3")
 [ "${CFG_TTL:-false}" = "true" ] && active_features+=("ttl")
 [ "${CFG_IP_SET:-false}" = "true" ] && active_features+=("ipset")
 [ "${CFG_UNICODE:-false}" = "true" ] && active_features+=("unicode")
@@ -62,11 +63,26 @@ FEATURES_STR="${active_features[*]:-none}"
   if [ -n "${BOOT_IMG_NAME:-}" ]; then
     echo "| GKI Boot Image | \`${BOOT_IMG_NAME}\` (\`${BOOT_IMG_SHA256:-unknown}\`) |"
   fi
+  if [ -n "${KMI_VERDICT:-}" ]; then
+    echo "| KMI Audit | \`${KMI_VERDICT}\` (mismatches=\`${KMI_CRC_MISMATCHES:-0}\`, missing=\`${KMI_MISSING_SYMBOLS:-0}\`, added=\`${KMI_ADDED_SYMBOLS:-0}\`) |"
+  fi
 } >> "$GITHUB_STEP_SUMMARY"
 
 if [ -n "${KMI_AUDIT_MD:-}" ] && [ -f "${KMI_AUDIT_MD}" ]; then
-  {
-    echo ""
-    cat "${KMI_AUDIT_MD}"
-  } >> "$GITHUB_STEP_SUMMARY"
+  if [ "${KMI_CRC_MISMATCHES:-0}" = "0" ] && [ "${KMI_MISSING_SYMBOLS:-0}" = "0" ]; then
+    {
+      echo ""
+      echo "<details>"
+      echo "<summary>KMI Subsystem Breakdown (0 mismatches, 0 missing, +${KMI_ADDED_SYMBOLS:-0} added)</summary>"
+      echo ""
+      cat "${KMI_AUDIT_MD}"
+      echo ""
+      echo "</details>"
+    } >> "$GITHUB_STEP_SUMMARY"
+  else
+    {
+      echo ""
+      cat "${KMI_AUDIT_MD}"
+    } >> "$GITHUB_STEP_SUMMARY"
+  fi
 fi
