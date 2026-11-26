@@ -1,0 +1,32 @@
+name: Upstream Manifest Monitor
+
+permissions:
+  contents: read
+  issues: write
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+    inputs:
+      create_issue:
+        description: 'Create or update GitHub Issue when upstream updates are detected'
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Check Upstream Sources and Dependencies
+        uses: ./.github/actions/upstream-monitor
+        with:
+          create_issue: ${{ inputs.create_issue }}
+          event_name: ${{ github.event_name }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

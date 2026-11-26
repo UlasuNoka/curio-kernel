@@ -1,0 +1,28 @@
+name: 'Upstream Monitor'
+description: 'Check OEM kernel branches, manifests, pinned dependencies, and CI tool releases.'
+
+inputs:
+  create_issue:
+    description: 'Create or update upstream-update GitHub Issue when changes are detected'
+    required: false
+    default: 'true'
+  event_name:
+    description: 'GitHub workflow event name'
+    required: false
+    default: 'workflow_dispatch'
+  github_token:
+    description: 'GitHub Token'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Upstream Monitor
+      shell: bash
+      env:
+        PYTHONUNBUFFERED: '1'
+        GH_TOKEN: ${{ inputs.github_token }}
+        TARGET_REPO: ${{ github.repository }}
+        EVENT_NAME: ${{ inputs.event_name }}
+        INPUT_CREATE_ISSUE: ${{ inputs.create_issue }}
+      run: python3 "${GITHUB_ACTION_PATH}/monitor.py"
