@@ -1,0 +1,18 @@
+name: 'Repository Audit'
+description: 'Validate targets, scripts, hermetic SHA pins, fragments, and patch references.'
+
+inputs:
+  local_patches_dir:
+    description: 'Optional pre-cloned curio-kernel-patches directory'
+    required: false
+    default: ''
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Run Repository Audit
+      shell: bash
+      env:
+        PYTHONUNBUFFERED: '1'
+        CURIO_AUDIT_LOCAL_PATCHES: ${{ inputs.local_patches_dir }}
+      run: python3 "${GITHUB_ACTION_PATH}/audit.py"

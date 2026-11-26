@@ -1,0 +1,49 @@
+name: Repository Lint and Audit
+
+on:
+  push:
+    branches:
+      - main
+      - 'test/**'
+  pull_request:
+    branches:
+      - main
+      - 'test/**'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Install actionlint and shellcheck
+        run: |
+          set -euo pipefail
+          if ! command -v shellcheck >/dev/null 2>&1; then
+            sudo apt-get -o Acquire::Retries=3 update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends shellcheck
+          fi
+          TMP_AL=$(mktemp -d)
+          curl -LfsS --retry 3 "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz" -o "${TMP_AL}/actionlint.tar.gz"
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  ${TMP_AL}/actionlint.tar.gz" | sha256sum -c -
+          tar -xzf "${TMP_AL}/actionlint.tar.gz" -C "$TMP_AL"
+          sudo install -m 0755 "${TMP_AL}/actionlint" /usr/local/bin/actionlint
+          rm -rf "$TMP_AL"
+          actionlint -version
+          shellcheck --version | head -n2
+
+      - name: Run actionlint
+        run: actionlint -color
+
+      - name: Run shellcheck on pipeline scripts
+        run: |
+          set -euo pipefail
+          mapfile -t SH_FILES < <(find .github -type f -name '*.sh' | sort)
+          shellcheck -S warning -e SC1090,SC1091,SC2034,SC2154 "${SH_FILES[@]}"
+
+      - name: Run Repository Audit
+        uses: ./.github/actions/repo-audit
