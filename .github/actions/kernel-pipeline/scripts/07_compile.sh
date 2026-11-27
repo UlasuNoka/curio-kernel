@@ -10,9 +10,6 @@ cd "$COMMON_KERNEL_FOLDER"
 
 export PYTHONWARNINGS="ignore:invalid escape sequence"
 
-echo "Getting last commit timestamp from kernel source..."
-COMMIT_TIMESTAMP=$(git log -1 --format=%ct 2>/dev/null || date +%s)
-
 WORKSPACE="${GITHUB_WORKSPACE}"
 MAP="-fdebug-prefix-map=${WORKSPACE}=."
 MPMAP="-fmacro-prefix-map=${WORKSPACE}=."
@@ -36,15 +33,17 @@ EOF
 chmod +x "${COMMON_KERNEL_FOLDER}/ld-wrapper"
 
 KERNEL_BUILD_DATE=$(date -u)
-export SOURCE_DATE_EPOCH=$COMMIT_TIMESTAMP
 
 if [ -n "${CFG_BUILD_TIMESTAMP:-}" ]; then
   export KBUILD_BUILD_TIMESTAMP="$CFG_BUILD_TIMESTAMP"
+  SOURCE_DATE_EPOCH=$(date -u -d "$CFG_BUILD_TIMESTAMP" +%s 2>/dev/null || date +%s)
   echo "Using custom build timestamp: $KBUILD_BUILD_TIMESTAMP"
 else
   export KBUILD_BUILD_TIMESTAMP="$KERNEL_BUILD_DATE"
+  SOURCE_DATE_EPOCH=$(date +%s)
   echo "Using current UTC build timestamp: $KBUILD_BUILD_TIMESTAMP"
 fi
+export SOURCE_DATE_EPOCH
 
 export KBUILD_BUILD_USER="${BUILD_USER:-kleaf}"
 export KBUILD_BUILD_HOST="${BUILD_HOST:-build-host}"
