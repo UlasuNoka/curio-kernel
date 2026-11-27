@@ -24,9 +24,6 @@ else
 fi
 
 ccache -z
-if [ -n "${CCACHE_DIR:-}" ]; then
-  rm -f "${CCACHE_DIR}/ccache.log"
-fi
 
 CONFIGS_C="${COMMON_KERNEL_FOLDER}/kernel/configs.c"
 if [ -f "$CONFIGS_C" ]; then

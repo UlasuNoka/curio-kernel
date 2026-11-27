@@ -14,20 +14,9 @@ echo "Perform ccache eviction (unused > 12h)..."
 find "$CCACHE_DIR" -type f -mmin +720 -delete
 find "$CCACHE_DIR" -type d -empty -delete
 
-if [ -n "${CCACHE_LOGFILE:-}" ] && [ -f "$CCACHE_LOGFILE" ]; then
-  cp "$CCACHE_LOGFILE" "$CCACHE_DIR"
-fi
-
-if [ "${INPUT_DEBUG:-false}" = "true" ]; then
-  if [ -n "${CCACHE_LOGFILE:-}" ] && [ -f "$CCACHE_LOGFILE" ]; then
-    echo "Rename ccache log"
-    LOG_DIR=$(dirname "$CCACHE_LOGFILE")
-    NEW_LOG_NAME="${CFG_MODEL}_${CFG_OS_VERSION}_${KERNEL_FULL_VER}_ccache.log"
-    mv "$CCACHE_LOGFILE" "${LOG_DIR}/${NEW_LOG_NAME}"
-    export_env "CCACHE_LOGFILE" "${LOG_DIR}/${NEW_LOG_NAME}"
-  else
-    echo "[WARN] ccache log not found, skipping rename."
-  fi
+if [ "${INPUT_DEBUG:-false}" = "true" ] && [ -n "${CCACHE_LOGFILE:-}" ] && [ -f "$CCACHE_LOGFILE" ]; then
+  mkdir -p "$DEBUG_ARTIFACTS_FOLDER"
+  cp -f "$CCACHE_LOGFILE" "${DEBUG_ARTIFACTS_FOLDER}/${CFG_MODEL}_${CFG_OS_VERSION}_${KERNEL_FULL_VER}_ccache.log"
 fi
 
 read -r HIT_RATE DIRECT_RATE < <(python3 - << 'PYSTATS'
