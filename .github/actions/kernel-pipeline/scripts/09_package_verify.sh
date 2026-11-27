@@ -103,10 +103,11 @@ echo "   - Size: $(numfmt --to=iec-i --suffix=B "$ZIP_SIZE")"
 echo "   - SHA256: $ZIP_SHA256"
 log_endgroup
 
-OS_LOWER=$(echo "$CFG_OS_VERSION" | tr '[:upper:]' '[:lower:]')
 TARGET_BASE="${GITHUB_WORKSPACE}/${CFG_TARGET_DIR:-targets/${CFG_MODEL}}"
 
-if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
+if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ] && [ "${CFG_BOOT_STUB:-}" = "none" ]; then
+  log_info "Skipping standalone boot.img packaging (boot_stub=none)"
+elif [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
   log_group "Create GKI boot.img (OEM Stub + magiskboot)"
 
   BOOT_IMG_NAME="boot_${TAG}_${CFG_OS_VERSION}_${KERNEL_FULL_VER}.img"
@@ -123,30 +124,10 @@ if [ "${BUILD_BOOT_IMAGE:-true}" = "true" ]; then
   fi
 
   STUB_DIR="${TARGET_BASE}/stubs"
-  BOOT_STUB_PATH=""
-  for candidate in \
-    "${STUB_DIR}/${CFG_MODEL}_${OS_LOWER}.stub.tzst" \
-    "${STUB_DIR}/${CFG_VARIANT:-}.stub.tzst" \
-    "${STUB_DIR}/${CFG_MODEL}.stub.tzst" \
-    "${STUB_DIR}/${TAG}.stub.tzst"; do
-    if [ -f "$candidate" ]; then
-      BOOT_STUB_PATH="$candidate"
-      break
-    fi
-  done
-
-  if [ -z "$BOOT_STUB_PATH" ] && [ -d "$STUB_DIR" ]; then
-    mapfile -t STUB_MATCHES < <(find "$STUB_DIR" -maxdepth 1 -type f -name "*.tzst" | sort)
-    if [ "${#STUB_MATCHES[@]}" -eq 1 ]; then
-      BOOT_STUB_PATH="${STUB_MATCHES[0]}"
-    elif [ "${#STUB_MATCHES[@]}" -gt 1 ]; then
-      log_error "Ambiguous boot stubs in ${STUB_DIR#"${GITHUB_WORKSPACE}/"} (${#STUB_MATCHES[@]} files, no exact match for ${CFG_VARIANT:-${CFG_MODEL}})"
-      exit 1
-    fi
-  fi
-
-  if [ -z "$BOOT_STUB_PATH" ] || [ ! -f "$BOOT_STUB_PATH" ]; then
-    log_error "OEM boot stub (.tzst) not found in ${STUB_DIR#"${GITHUB_WORKSPACE}/"}"
+  if [ -n "${CFG_BOOT_STUB:-}" ] && [ -f "${STUB_DIR}/${CFG_BOOT_STUB}" ]; then
+    BOOT_STUB_PATH="${STUB_DIR}/${CFG_BOOT_STUB}"
+  else
+    log_error "Configured boot_stub not found: ${STUB_DIR#"${GITHUB_WORKSPACE}/"}/${CFG_BOOT_STUB:-<unset>}"
     exit 1
   fi
 
